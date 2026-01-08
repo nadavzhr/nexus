@@ -38,4 +38,31 @@ class LineNumberArea(QWidget):
         Args:
             event: The paint event
         """
-        self._editor.line_number_area_paint_event(event)
+        from PyQt5.QtGui import QPainter
+        from PyQt5.QtCore import Qt
+        
+        painter = QPainter(self)
+        
+        # Get theme colors
+        theme = self._editor.get_current_theme()
+        painter.fillRect(event.rect(), theme.line_number_bg)
+        painter.setPen(theme.line_number)
+        
+        # Paint line numbers (delegate to editor)
+        block = self._editor.firstVisibleBlock()
+        block_number = block.blockNumber()
+        top = int(self._editor.blockBoundingGeometry(block).translated(
+            self._editor.contentOffset()).top())
+        bottom = top + int(self._editor.blockBoundingRect(block).height())
+        
+        while block.isValid() and top <= event.rect().bottom():
+            if block.isVisible() and bottom >= event.rect().top():
+                number = str(block_number + 1)
+                painter.drawText(0, top, self.width() - 3,
+                               self._editor.fontMetrics().height(),
+                               Qt.AlignRight, number)
+            
+            block = block.next()
+            top = bottom
+            bottom = top + int(self._editor.blockBoundingRect(block).height())
+            block_number += 1

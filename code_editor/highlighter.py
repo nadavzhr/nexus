@@ -177,6 +177,18 @@ class PygmentsHighlighter(QSyntaxHighlighter):
         except Exception:
             # If highlighting fails, just skip it
             pass
+    
+    def set_theme(self, theme) -> None:
+        """
+        Set a theme for syntax highlighting.
+        
+        Args:
+            theme: Theme object with color definitions
+        """
+        self._theme = theme
+        self._format_cache.clear()
+        self._build_format_cache()
+        self.rehighlight()
 
 
 def get_lexer_for_language(language: str):

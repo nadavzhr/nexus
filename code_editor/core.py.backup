@@ -8,16 +8,12 @@ from typing import Optional, Any, Dict, List
 from PyQt5.QtCore import Qt, pyqtSignal, QRect
 from PyQt5.QtGui import (
     QTextBlockUserData, QColor, QPainter, QTextFormat,
-    QTextCursor, QPaintEvent, QMouseEvent, QResizeEvent, QTextDocument,
-    QKeySequence
+    QTextCursor, QPaintEvent, QMouseEvent, QResizeEvent, QTextDocument
 )
-from PyQt5.QtWidgets import QPlainTextEdit, QWidget, QTextEdit, QShortcut
+from PyQt5.QtWidgets import QPlainTextEdit, QWidget, QTextEdit
 
 from .line_numbers import LineNumberArea
 from .highlighter import PygmentsHighlighter
-from .theme import ThemeManager, Theme
-from .search import SearchService, SearchPopup
-from .shortcuts import EditorActions
 
 
 class LineData(QTextBlockUserData):
@@ -94,26 +90,14 @@ class CodeEditor(QPlainTextEdit):
         self._languages: Dict[str, Any] = {}
         self._current_language: Optional[str] = None
         
-        # Theme management
-        self._theme_manager = ThemeManager()
-        
-        # Search components
-        self._search_service = SearchService(self.document())
-        self._search_popup: Optional[SearchPopup] = None
-        
-        # Editor actions
-        self._actions = EditorActions(self)
-        
         # Decoration tracking
         self._decorations: Dict[str, List[QTextEdit.ExtraSelection]] = {
             'search': [],
-            'current_match': [],
-            'current_line': [],
             'hover': [],
             'custom': []
         }
         
-        # Search state (legacy - kept for compatibility)
+        # Search state
         self._search_pattern: Optional[str] = None
         self._search_regex: bool = False
         
@@ -121,16 +105,9 @@ class CodeEditor(QPlainTextEdit):
         self._hover_enabled: bool = True
         self._last_hover_line: int = -1
         
-        # Current line highlighting
-        self._current_line_highlight_enabled: bool = True
-        
         # Setup UI
         self._setup_ui()
         self._connect_signals()
-        self._setup_shortcuts()
-        
-        # Apply initial theme
-        self._apply_theme()
     
     def _setup_ui(self) -> None:
         """Configure the editor's appearance and behavior."""
@@ -153,32 +130,6 @@ class CodeEditor(QPlainTextEdit):
         self.blockCountChanged.connect(self._update_line_number_area_width)
         self.updateRequest.connect(self._update_line_number_area)
         self.cursorPositionChanged.connect(self._on_cursor_position_changed)
-    
-    def _setup_shortcuts(self) -> None:
-        """Setup keyboard shortcuts."""
-        # Comment/Uncomment - Ctrl+/
-        self._shortcut_comment = QShortcut(QKeySequence("Ctrl+/"), self)
-        self._shortcut_comment.activated.connect(self.toggle_comment)
-        
-        # Duplicate line - Ctrl+D
-        self._shortcut_duplicate = QShortcut(QKeySequence("Ctrl+D"), self)
-        self._shortcut_duplicate.activated.connect(self.duplicate_line)
-        
-        # Move line up - Alt+Up
-        self._shortcut_move_up = QShortcut(QKeySequence("Alt+Up"), self)
-        self._shortcut_move_up.activated.connect(self.move_line_up)
-        
-        # Move line down - Alt+Down
-        self._shortcut_move_down = QShortcut(QKeySequence("Alt+Down"), self)
-        self._shortcut_move_down.activated.connect(self.move_line_down)
-        
-        # Go to line - Ctrl+G
-        self._shortcut_goto = QShortcut(QKeySequence("Ctrl+G"), self)
-        self._shortcut_goto.activated.connect(self.go_to_line)
-        
-        # Search - Ctrl+F
-        self._shortcut_search = QShortcut(QKeySequence("Ctrl+F"), self)
-        self._shortcut_search.activated.connect(self.show_search_popup)
     
     # ==================== Line Number Area Methods ====================
     
@@ -213,6 +164,30 @@ class CodeEditor(QPlainTextEdit):
             self._line_number_area_width(), 
             cr.height()
         )
+    
+    def line_number_area_paint_event(self, event: QPaintEvent) -> None:
+        """Paint the line number area. Called by LineNumberArea."""
+        painter = QPainter(self._line_number_area)
+        painter.fillRect(event.rect(), Qt.lightGray)
+        
+        block = self.firstVisibleBlock()
+        block_number = block.blockNumber()
+        top = int(self.blockBoundingGeometry(block).translated(
+            self.contentOffset()).top())
+        bottom = top + int(self.blockBoundingRect(block).height())
+        
+        while block.isValid() and top <= event.rect().bottom():
+            if block.isVisible() and bottom >= event.rect().top():
+                number = str(block_number + 1)
+                painter.setPen(Qt.black)
+                painter.drawText(0, top, self._line_number_area.width() - 3,
+                               self.fontMetrics().height(),
+                               Qt.AlignRight, number)
+            
+            block = block.next()
+            top = bottom
+            bottom = top + int(self.blockBoundingRect(block).height())
+            block_number += 1
     
     # ==================== Line Data API ====================
     
@@ -434,10 +409,6 @@ class CodeEditor(QPlainTextEdit):
         cursor = self.textCursor()
         line_number = cursor.blockNumber()
         self.cursorMoved.emit(line_number)
-        
-        # Update current line highlighting
-        if self._current_line_highlight_enabled:
-            self._highlight_current_line()
     
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         """Handle double-click events."""
@@ -499,226 +470,3 @@ class CodeEditor(QPlainTextEdit):
         self._hover_enabled = enabled
         if not enabled:
             self.clear_decorations('hover')
-    
-    # ==================== Theme Management ====================
-    
-    def set_theme(self, theme_name: str) -> None:
-        """
-        Set the editor theme.
-        
-        Args:
-            theme_name: Name of the theme ('light' or 'dark' or custom)
-        """
-        self._theme_manager.set_current_theme(theme_name)
-        self._apply_theme()
-    
-    def get_current_theme(self) -> Theme:
-        """Get the currently active theme."""
-        return self._theme_manager.get_current_theme()
-    
-    def register_theme(self, theme: Theme) -> None:
-        """
-        Register a custom theme.
-        
-        Args:
-            theme: Theme object to register
-        """
-        self._theme_manager.register_theme(theme)
-    
-    def list_themes(self) -> List[str]:
-        """Get a list of available theme names."""
-        return self._theme_manager.list_themes()
-    
-    def _apply_theme(self) -> None:
-        """Apply the current theme to the editor."""
-        theme = self._theme_manager.get_current_theme()
-        
-        # Set editor colors
-        palette = self.palette()
-        palette.setColor(palette.Base, theme.background)
-        palette.setColor(palette.Text, theme.text)
-        palette.setColor(palette.Highlight, theme.selection)
-        palette.setColor(palette.HighlightedText, theme.text)
-        self.setPalette(palette)
-        
-        # Update line number area
-        self._line_number_area.update()
-        
-        # Re-highlight current line
-        if self._current_line_highlight_enabled:
-            self._highlight_current_line()
-        
-        # Update syntax highlighter if present
-        if self._highlighter:
-            self._highlighter.set_theme(theme)
-    
-    # ==================== Current Line Highlighting ====================
-    
-    def _highlight_current_line(self) -> None:
-        """Highlight the current line."""
-        self.clear_decorations('current_line')
-        
-        if not self.isReadOnly():
-            cursor = self.textCursor()
-            theme = self._theme_manager.get_current_theme()
-            
-            selection = QTextEdit.ExtraSelection()
-            selection.format.setBackground(theme.current_line)
-            selection.format.setProperty(QTextFormat.FullWidthSelection, True)
-            selection.cursor = cursor
-            selection.cursor.clearSelection()
-            
-            self._decorations['current_line'].append(selection)
-            self._apply_decorations()
-    
-    def set_current_line_highlight_enabled(self, enabled: bool) -> None:
-        """
-        Enable or disable current line highlighting.
-        
-        Args:
-            enabled: True to enable, False to disable
-        """
-        self._current_line_highlight_enabled = enabled
-        if enabled:
-            self._highlight_current_line()
-        else:
-            self.clear_decorations('current_line')
-    
-    # ==================== Enhanced Search with Popup ====================
-    
-    def show_search_popup(self) -> None:
-        """Show the search popup widget."""
-        if not self._search_popup:
-            self._search_popup = SearchPopup(self)
-            self._search_popup.searchRequested.connect(self._on_search_requested)
-            self._search_popup.nextRequested.connect(self._on_next_match)
-            self._search_popup.previousRequested.connect(self._on_previous_match)
-            self._search_popup.closeRequested.connect(self._on_search_closed)
-        
-        # Position popup at top-right corner
-        popup_width = self._search_popup.sizeHint().width()
-        popup_height = self._search_popup.sizeHint().height()
-        x = self.width() - popup_width - 20
-        y = 10
-        self._search_popup.setGeometry(x, y, popup_width, popup_height)
-        
-        # Restore last search
-        last_pattern = self._search_service.get_last_pattern()
-        if last_pattern:
-            self._search_popup.set_pattern(last_pattern)
-        
-        self._search_popup.show_popup()
-    
-    def _on_search_requested(self, pattern: str, case_sensitive: bool,
-                             use_regex: bool, whole_word: bool) -> None:
-        """Handle search request from popup."""
-        # Perform search
-        count = self._search_service.search(pattern, case_sensitive, use_regex, whole_word)
-        
-        # Clear previous highlights
-        self.clear_decorations('search')
-        self.clear_decorations('current_match')
-        
-        if count > 0:
-            # Highlight all matches
-            theme = self._theme_manager.get_current_theme()
-            for match in self._search_service.get_matches():
-                selection = QTextEdit.ExtraSelection()
-                selection.format.setBackground(theme.search_match)
-                selection.cursor = match.cursor
-                self._decorations['search'].append(selection)
-            
-            # Highlight current match distinctly
-            current_match = self._search_service.get_current_match()
-            if current_match:
-                selection = QTextEdit.ExtraSelection()
-                selection.format.setBackground(theme.current_match)
-                selection.cursor = current_match.cursor
-                self._decorations['current_match'].append(selection)
-                
-                # Move editor to current match
-                self.setTextCursor(current_match.cursor)
-                self.centerCursor()
-            
-            self._apply_decorations()
-        
-        # Update match count in popup
-        if self._search_popup:
-            current_idx = 1 if count > 0 else 0
-            self._search_popup.update_match_count(current_idx, count)
-    
-    def _on_next_match(self) -> None:
-        """Jump to next search match."""
-        match = self._search_service.next_match()
-        if match:
-            self._update_current_match(match)
-    
-    def _on_previous_match(self) -> None:
-        """Jump to previous search match."""
-        match = self._search_service.previous_match()
-        if match:
-            self._update_current_match(match)
-    
-    def _update_current_match(self, match) -> None:
-        """Update highlighting for current match."""
-        # Clear current match highlighting
-        self.clear_decorations('current_match')
-        
-        # Highlight new current match
-        theme = self._theme_manager.get_current_theme()
-        selection = QTextEdit.ExtraSelection()
-        selection.format.setBackground(theme.current_match)
-        selection.cursor = match.cursor
-        self._decorations['current_match'].append(selection)
-        
-        self._apply_decorations()
-        
-        # Move editor to match
-        self.setTextCursor(match.cursor)
-        self.centerCursor()
-        
-        # Update popup match count
-        if self._search_popup:
-            matches = self._search_service.get_matches()
-            current_idx = matches.index(match) + 1 if match in matches else 0
-            self._search_popup.update_match_count(current_idx, len(matches))
-    
-    def _on_search_closed(self) -> None:
-        """Handle search popup close."""
-        if self._search_popup:
-            self._search_popup.hide()
-    
-    # ==================== Keyboard Shortcut Actions (Public API) ====================
-    
-    def toggle_comment(self) -> None:
-        """Toggle comment on the current line or selection."""
-        if not self.isReadOnly():
-            self._actions.toggle_comment()
-    
-    def duplicate_line(self) -> None:
-        """Duplicate the current line or selection."""
-        if not self.isReadOnly():
-            self._actions.duplicate_line()
-    
-    def move_line_up(self) -> None:
-        """Move the current line up."""
-        if not self.isReadOnly():
-            self._actions.move_line_up()
-    
-    def move_line_down(self) -> None:
-        """Move the current line down."""
-        if not self.isReadOnly():
-            self._actions.move_line_down()
-    
-    def go_to_line(self) -> None:
-        """Show dialog and jump to a specific line."""
-        self._actions.go_to_line()
-    
-    def jump_to_line(self, line_number: int) -> None:
-        """
-        Jump to a specific line number (public API).
-        
-        Args:
-            line_number: Line number (1-based)
-        """
-        self._actions.jump_to_line(line_number)
