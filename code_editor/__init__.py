@@ -22,6 +22,7 @@ from .line_numbers import LineNumberArea
 from .theme import Theme, ThemeManager
 from .search import SearchService, SearchPopup
 from .shortcuts import EditorActions
+from .goto_line_overlay import GotoLineOverlay
 
 __all__ = [
     'CodeEditor',
@@ -33,6 +34,7 @@ __all__ = [
     'SearchService',
     'SearchPopup',
     'EditorActions',
+    'GotoLineOverlay',
 ]
 
-__version__ = '0.2.0'
+__version__ = '0.2.2'

@@ -18,6 +18,7 @@ from .highlighter import PygmentsHighlighter
 from .theme import ThemeManager, Theme
 from .search import SearchService, SearchPopup
 from .shortcuts import EditorActions
+from .goto_line_overlay import GotoLineOverlay
 
 
 class LineData(QTextBlockUserData):
@@ -100,6 +101,9 @@ class CodeEditor(QPlainTextEdit):
         # Search components
         self._search_service = SearchService(self.document())
         self._search_popup: Optional[SearchPopup] = None
+        
+        # Goto line overlay
+        self._goto_line_overlay: Optional[GotoLineOverlay] = None
         
         # Editor actions
         self._actions = EditorActions(self)
@@ -730,8 +734,35 @@ class CodeEditor(QPlainTextEdit):
             self._actions.move_line_down()
     
     def go_to_line(self) -> None:
-        """Show dialog and jump to a specific line."""
-        self._actions.go_to_line()
+        """Show overlay and jump to a specific line."""
+        # Create overlay if it doesn't exist
+        if self._goto_line_overlay is None:
+            self._goto_line_overlay = GotoLineOverlay(self)
+            self._goto_line_overlay.jumpRequested.connect(self.jump_to_line)
+            self._goto_line_overlay.closeRequested.connect(self._on_goto_overlay_closed)
+        
+        # Show the overlay with current max line
+        max_line = self.document().blockCount()
+        self._goto_line_overlay.show_overlay(max_line)
+    
+    def _preview_goto_line(self, line_number: int) -> None:
+        """Preview jump to line (called by overlay for live updates).
+        
+        Args:
+            line_number: Line number to preview (1-based)
+        """
+        # Move cursor to line as user types (live preview)
+        block = self.document().findBlockByLineNumber(line_number - 1)
+        if block.isValid():
+            cursor = self.textCursor()
+            cursor.setPosition(block.position())
+            self.setTextCursor(cursor)
+            self.centerCursor()
+    
+    def _on_goto_overlay_closed(self) -> None:
+        """Handle goto line overlay being closed."""
+        # Return focus to editor
+        self.setFocus()
     
     def jump_to_line(self, line_number: int) -> None:
         """
