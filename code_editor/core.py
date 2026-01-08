@@ -128,6 +128,9 @@ class CodeEditor(QPlainTextEdit):
         # Current line highlighting
         self._current_line_highlight_enabled: bool = True
         
+        # Track if last copy/cut was a full line (for VS Code-style paste)
+        self._last_copy_was_line: bool = False
+        
         # Setup UI
         self._setup_ui()
         self._connect_signals()
@@ -478,7 +481,7 @@ class CodeEditor(QPlainTextEdit):
             self._last_hover_line = -1
     
     def keyPressEvent(self, event) -> None:
-        """Handle key press events for smart copy/cut."""
+        """Handle key press events for smart copy/cut/paste."""
         from PyQt5.QtCore import Qt
         
         # Handle Ctrl+C when no selection - copy current line
@@ -486,11 +489,23 @@ class CodeEditor(QPlainTextEdit):
             if not self.textCursor().hasSelection():
                 self.copy_line()
                 return
+            else:
+                # Normal copy with selection - reset line copy flag
+                self._last_copy_was_line = False
         
         # Handle Ctrl+X when no selection - cut current line
         elif event.key() == Qt.Key_X and event.modifiers() == Qt.ControlModifier:
             if not self.textCursor().hasSelection() and not self.isReadOnly():
                 self.cut_line()
+                return
+            else:
+                # Normal cut with selection - reset line copy flag
+                self._last_copy_was_line = False
+        
+        # Handle Ctrl+V - paste with line-aware behavior
+        elif event.key() == Qt.Key_V and event.modifiers() == Qt.ControlModifier:
+            if not self.isReadOnly():
+                self.paste_line()
                 return
         
         # Default behavior for all other keys
@@ -748,6 +763,57 @@ class CodeEditor(QPlainTextEdit):
         """Move the current line down."""
         if not self.isReadOnly():
             self._actions.move_line_down()
+    
+    def copy_line(self) -> None:
+        """
+        Copy the current line to clipboard (VS Code-style).
+        
+        If there's no selection, copies the entire line and marks it as a line copy.
+        When pasted, it will be inserted as a new line.
+        """
+        self._actions.copy_line()
+    
+    def cut_line(self) -> None:
+        """
+        Cut the current line to clipboard (VS Code-style).
+        
+        If there's no selection, cuts the entire line and marks it as a line copy.
+        When pasted, it will be inserted as a new line.
+        """
+        if not self.isReadOnly():
+            self._actions.cut_line()
+    
+    def paste_line(self) -> None:
+        """
+        Paste from clipboard with VS Code-style line paste behavior.
+        
+        If the clipboard contains a full line (from copy_line or cut_line),
+        it inserts a new line. Otherwise, pastes at cursor position.
+        """
+        if self.isReadOnly():
+            return
+        
+        from PyQt5.QtWidgets import QApplication
+        clipboard = QApplication.clipboard()
+        text = clipboard.text()
+        
+        if not text:
+            return
+        
+        cursor = self.textCursor()
+        
+        # Check if this was a line copy/cut (text ends with newline and flag is set)
+        if self._last_copy_was_line and text.endswith('\n'):
+            # VS Code-style line paste: insert as a new line
+            cursor.movePosition(QTextCursor.StartOfBlock)
+            cursor.insertText(text)
+            # Reset flag after paste
+            self._last_copy_was_line = False
+        else:
+            # Normal paste at cursor position
+            cursor.insertText(text)
+            # Reset flag
+            self._last_copy_was_line = False
     
     def go_to_line(self) -> None:
         """Show overlay and jump to a specific line."""

@@ -336,14 +336,17 @@ class EditorActions:
         
         # Only copy line if there's no selection
         if not cursor.hasSelection():
-            # Get current line text
+            # Get current line text (including newline)
             block = cursor.block()
-            text = block.text()
+            text = block.text() + '\n'  # Add newline to mark as line copy
             
             # Copy to clipboard
             from PyQt5.QtWidgets import QApplication
             clipboard = QApplication.clipboard()
             clipboard.setText(text)
+            
+            # Mark this as a line copy (store in editor for paste detection)
+            self.editor._last_copy_was_line = True
     
     def cut_line(self) -> None:
         """
@@ -355,14 +358,17 @@ class EditorActions:
         
         # Only cut line if there's no selection
         if not cursor.hasSelection():
-            # Get current line text
+            # Get current line text (including newline)
             block = cursor.block()
-            text = block.text()
+            text = block.text() + '\n'  # Add newline to mark as line copy
             
             # Copy to clipboard
             from PyQt5.QtWidgets import QApplication
             clipboard = QApplication.clipboard()
             clipboard.setText(text)
+            
+            # Mark this as a line copy (store in editor for paste detection)
+            self.editor._last_copy_was_line = True
             
             # Delete the line
             cursor.select(QTextCursor.LineUnderCursor)
