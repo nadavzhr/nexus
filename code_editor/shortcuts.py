@@ -215,7 +215,10 @@ class EditorActions:
         # Restore cursor position
         cursor.movePosition(QTextCursor.Up)
         cursor.movePosition(QTextCursor.StartOfBlock)
-        cursor.movePosition(QTextCursor.Right, QTextCursor.MoveAnchor, current_pos)
+        # Bound cursor position to line length
+        line_length = cursor.block().length() - 1  # -1 for newline
+        safe_pos = min(current_pos, line_length)
+        cursor.movePosition(QTextCursor.Right, QTextCursor.MoveAnchor, safe_pos)
         
         cursor.endEditBlock()
         self.editor.setTextCursor(cursor)
@@ -250,7 +253,10 @@ class EditorActions:
         
         # Restore cursor position
         cursor.movePosition(QTextCursor.StartOfBlock)
-        cursor.movePosition(QTextCursor.Right, QTextCursor.MoveAnchor, current_pos)
+        # Bound cursor position to line length
+        line_length = cursor.block().length() - 1  # -1 for newline
+        safe_pos = min(current_pos, line_length)
+        cursor.movePosition(QTextCursor.Right, QTextCursor.MoveAnchor, safe_pos)
         
         cursor.endEditBlock()
         self.editor.setTextCursor(cursor)
@@ -319,3 +325,46 @@ class EditorActions:
         
         current_lang = self.editor.get_current_language()
         return comment_map.get(current_lang, '#')
+    
+    def copy_line(self) -> None:
+        """
+        Copy the current line to clipboard if no selection.
+        
+        If there's a selection, this does nothing (Qt's native Ctrl+C handles it).
+        """
+        cursor = self.editor.textCursor()
+        
+        # Only copy line if there's no selection
+        if not cursor.hasSelection():
+            # Get current line text
+            block = cursor.block()
+            text = block.text()
+            
+            # Copy to clipboard
+            from PyQt5.QtWidgets import QApplication
+            clipboard = QApplication.clipboard()
+            clipboard.setText(text)
+    
+    def cut_line(self) -> None:
+        """
+        Cut the current line to clipboard if no selection.
+        
+        If there's a selection, this does nothing (Qt's native Ctrl+X handles it).
+        """
+        cursor = self.editor.textCursor()
+        
+        # Only cut line if there's no selection
+        if not cursor.hasSelection():
+            # Get current line text
+            block = cursor.block()
+            text = block.text()
+            
+            # Copy to clipboard
+            from PyQt5.QtWidgets import QApplication
+            clipboard = QApplication.clipboard()
+            clipboard.setText(text)
+            
+            # Delete the line
+            cursor.select(QTextCursor.LineUnderCursor)
+            cursor.removeSelectedText()
+            cursor.deleteChar()  # Delete the newline

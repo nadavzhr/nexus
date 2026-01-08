@@ -85,6 +85,7 @@ class SearchService:
         
         # Find all matches
         cursor = QTextCursor(self.document)
+        last_position = -1
         
         if use_regex:
             # Use regex search
@@ -94,15 +95,30 @@ class SearchService:
             
             cursor = self.document.find(regex, cursor, flags)
             while not cursor.isNull():
+                # Prevent infinite loop with zero-width matches
+                current_pos = cursor.position()
+                if current_pos == last_position:
+                    # Move forward to avoid infinite loop
+                    cursor.setPosition(current_pos + 1)
+                    cursor = self.document.find(regex, cursor, flags)
+                    continue
+                
                 match = SearchMatch(cursor)
                 self._matches.append(match)
+                last_position = current_pos
                 cursor = self.document.find(regex, cursor, flags)
         else:
             # Use plain text search
             cursor = self.document.find(pattern, cursor, flags)
             while not cursor.isNull():
+                # Prevent infinite loop
+                current_pos = cursor.position()
+                if current_pos == last_position:
+                    break
+                
                 match = SearchMatch(cursor)
                 self._matches.append(match)
+                last_position = current_pos
                 cursor = self.document.find(pattern, cursor, flags)
         
         if self._matches:

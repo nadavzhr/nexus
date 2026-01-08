@@ -327,3 +327,50 @@ No performance regression compared to v0.1.0.
 Enhanced based on review feedback from @nadavzhr.
 
 Version 0.2.0 - January 2026
+
+---
+
+## Update: Smart Copy/Cut (Added after review)
+
+### Enhanced Clipboard Operations
+
+**Ctrl+C** and **Ctrl+X** now have smart behavior:
+
+- **When no text is selected:**
+  - **Ctrl+C** copies the entire current line
+  - **Ctrl+X** cuts the entire current line
+  
+- **When text is selected:**
+  - **Ctrl+C** and **Ctrl+X** work normally (Qt's native behavior)
+
+- **Ctrl+V** always works normally (Qt's native paste)
+
+This matches the behavior of modern code editors like VS Code.
+
+**Usage:**
+```python
+editor = CodeEditor()
+
+# Programmatic API
+editor.copy_line()  # Copy current line
+editor.cut_line()   # Cut current line
+
+# Keyboard shortcuts work automatically
+# Just press Ctrl+C or Ctrl+X without selecting text
+```
+
+**Demo:**
+```bash
+python demo_copy_cut.py
+```
+
+---
+
+## Code Review Fixes
+
+All code review issues have been addressed:
+
+1. ✅ **Search infinite loop prevention** - Added safeguards for zero-width regex matches
+2. ✅ **Highlighter theme initialization** - `_theme` attribute properly initialized
+3. ✅ **Cursor positioning bounds** - Move line up/down now bounds cursor position to line length
+

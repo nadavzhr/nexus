@@ -473,6 +473,25 @@ class CodeEditor(QPlainTextEdit):
             self.clear_decorations('hover')
             self._last_hover_line = -1
     
+    def keyPressEvent(self, event) -> None:
+        """Handle key press events for smart copy/cut."""
+        from PyQt5.QtCore import Qt
+        
+        # Handle Ctrl+C when no selection - copy current line
+        if event.key() == Qt.Key_C and event.modifiers() == Qt.ControlModifier:
+            if not self.textCursor().hasSelection():
+                self.copy_line()
+                return
+        
+        # Handle Ctrl+X when no selection - cut current line
+        elif event.key() == Qt.Key_X and event.modifiers() == Qt.ControlModifier:
+            if not self.textCursor().hasSelection() and not self.isReadOnly():
+                self.cut_line()
+                return
+        
+        # Default behavior for all other keys
+        super().keyPressEvent(event)
+    
     # ==================== Utility Methods ====================
     
     def line_count(self) -> int:
@@ -722,3 +741,20 @@ class CodeEditor(QPlainTextEdit):
             line_number: Line number (1-based)
         """
         self._actions.jump_to_line(line_number)
+    
+    def copy_line(self) -> None:
+        """
+        Copy the current line to clipboard if no selection.
+        
+        If there's a selection, use Qt's native copy (Ctrl+C).
+        """
+        self._actions.copy_line()
+    
+    def cut_line(self) -> None:
+        """
+        Cut the current line to clipboard if no selection.
+        
+        If there's a selection, use Qt's native cut (Ctrl+X).
+        """
+        if not self.isReadOnly():
+            self._actions.cut_line()

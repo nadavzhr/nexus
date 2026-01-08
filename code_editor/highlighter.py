@@ -44,6 +44,7 @@ class PygmentsHighlighter(QSyntaxHighlighter):
         
         self._lexer = lexer or PythonLexer()
         self._style = get_style_by_name(style_name) if PYGMENTS_AVAILABLE else None
+        self._theme = None  # Initialize theme attribute
         self._format_cache = {}
         self._build_format_cache()
     
