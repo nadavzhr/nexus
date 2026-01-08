@@ -103,7 +103,7 @@ class SearchService:
                     # Move forward to avoid infinite loop
                     next_pos = current_pos + 1
                     # Validate position before setting
-                    if next_pos >= self.document.characterCount():
+                    if next_pos > self.document.characterCount():
                         break
                     cursor.setPosition(next_pos)
                     cursor = self.document.find(regex, cursor, flags)
@@ -341,8 +341,6 @@ class SearchPopup(QWidget):
     
     def keyPressEvent(self, event) -> None:
         """Handle key press events."""
-        from PyQt5.QtCore import Qt
-        
         # Enter - Next match
         if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
             if event.modifiers() == Qt.ShiftModifier:
