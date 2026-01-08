@@ -86,6 +86,8 @@ class SearchService:
         # Find all matches
         cursor = QTextCursor(self.document)
         last_position = -1
+        max_iterations = 10000  # Safety limit to prevent infinite loops
+        iteration_count = 0
         
         if use_regex:
             # Use regex search
@@ -94,32 +96,47 @@ class SearchService:
                 regex.setCaseSensitivity(Qt.CaseInsensitive)
             
             cursor = self.document.find(regex, cursor, flags)
-            while not cursor.isNull():
+            while not cursor.isNull() and iteration_count < max_iterations:
                 # Prevent infinite loop with zero-width matches
                 current_pos = cursor.position()
                 if current_pos == last_position:
                     # Move forward to avoid infinite loop
-                    cursor.setPosition(current_pos + 1)
+                    next_pos = current_pos + 1
+                    # Validate position before setting
+                    if next_pos >= self.document.characterCount():
+                        break
+                    cursor.setPosition(next_pos)
                     cursor = self.document.find(regex, cursor, flags)
+                    iteration_count += 1
                     continue
+                
+                # Validate cursor position is within document
+                if current_pos < 0 or current_pos > self.document.characterCount():
+                    break
                 
                 match = SearchMatch(cursor)
                 self._matches.append(match)
                 last_position = current_pos
                 cursor = self.document.find(regex, cursor, flags)
+                iteration_count += 1
         else:
             # Use plain text search
             cursor = self.document.find(pattern, cursor, flags)
-            while not cursor.isNull():
+            while not cursor.isNull() and iteration_count < max_iterations:
                 # Prevent infinite loop
                 current_pos = cursor.position()
                 if current_pos == last_position:
+                    break
+                
+                # Validate cursor position
+                if current_pos < 0 or current_pos > self.document.characterCount():
                     break
                 
                 match = SearchMatch(cursor)
                 self._matches.append(match)
                 last_position = current_pos
                 cursor = self.document.find(pattern, cursor, flags)
+                iteration_count += 1
         
         if self._matches:
             self._current_index = 0
@@ -200,7 +217,8 @@ class SearchPopup(QWidget):
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Find...")
         self.search_input.setMinimumWidth(200)
-        self.search_input.returnPressed.connect(self._on_search)
+        # Live search as user types
+        self.search_input.textChanged.connect(self._on_search)
         search_row.addWidget(self.search_input)
         
         # Match count label
@@ -211,18 +229,21 @@ class SearchPopup(QWidget):
         # Previous button
         self.prev_btn = QPushButton("↑")
         self.prev_btn.setMaximumWidth(30)
+        self.prev_btn.setToolTip("Previous (Shift+Enter)")
         self.prev_btn.clicked.connect(self.previousRequested.emit)
         search_row.addWidget(self.prev_btn)
         
         # Next button
         self.next_btn = QPushButton("↓")
         self.next_btn.setMaximumWidth(30)
+        self.next_btn.setToolTip("Next (Enter)")
         self.next_btn.clicked.connect(self.nextRequested.emit)
         search_row.addWidget(self.next_btn)
         
         # Close button
         close_btn = QPushButton("×")
         close_btn.setMaximumWidth(30)
+        close_btn.setToolTip("Close (Esc)")
         close_btn.clicked.connect(self.closeRequested.emit)
         search_row.addWidget(close_btn)
         
@@ -232,14 +253,17 @@ class SearchPopup(QWidget):
         options_row = QHBoxLayout()
         
         self.case_checkbox = QCheckBox("Case (Aa)")
+        self.case_checkbox.setToolTip("Match case (Alt+C)")
         self.case_checkbox.toggled.connect(self._on_search)
         options_row.addWidget(self.case_checkbox)
         
         self.regex_checkbox = QCheckBox("Regex (.*)")
+        self.regex_checkbox.setToolTip("Use regular expression (Alt+R)")
         self.regex_checkbox.toggled.connect(self._on_search)
         options_row.addWidget(self.regex_checkbox)
         
         self.whole_word_checkbox = QCheckBox("Word (ab)")
+        self.whole_word_checkbox.setToolTip("Match whole word (Alt+W)")
         self.whole_word_checkbox.toggled.connect(self._on_search)
         options_row.addWidget(self.whole_word_checkbox)
         
@@ -308,14 +332,51 @@ class SearchPopup(QWidget):
         """Show the popup and restore last search."""
         if self._last_pattern:
             self.search_input.setText(self._last_pattern)
-            self._on_search()
+            # Don't trigger search on restore, it will trigger via textChanged
         self.show()
-        self.search_input.setFocus()
+        self.raise_()  # Bring to front
+        self.activateWindow()  # Activate window
+        self.search_input.setFocus(Qt.OtherFocusReason)
         self.search_input.selectAll()
     
     def keyPressEvent(self, event) -> None:
         """Handle key press events."""
-        if event.key() == Qt.Key_Escape:
+        from PyQt5.QtCore import Qt
+        
+        # Enter - Next match
+        if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
+            if event.modifiers() == Qt.ShiftModifier:
+                # Shift+Enter - Previous match
+                self.previousRequested.emit()
+            else:
+                # Enter - Next match
+                self.nextRequested.emit()
+            event.accept()
+            return
+        
+        # Escape - Close
+        elif event.key() == Qt.Key_Escape:
             self.closeRequested.emit()
-        else:
-            super().keyPressEvent(event)
+            event.accept()
+            return
+        
+        # Alt+C - Toggle case sensitivity
+        elif event.key() == Qt.Key_C and event.modifiers() == Qt.AltModifier:
+            self.case_checkbox.setChecked(not self.case_checkbox.isChecked())
+            event.accept()
+            return
+        
+        # Alt+R - Toggle regex
+        elif event.key() == Qt.Key_R and event.modifiers() == Qt.AltModifier:
+            self.regex_checkbox.setChecked(not self.regex_checkbox.isChecked())
+            event.accept()
+            return
+        
+        # Alt+W - Toggle whole word
+        elif event.key() == Qt.Key_W and event.modifiers() == Qt.AltModifier:
+            self.whole_word_checkbox.setChecked(not self.whole_word_checkbox.isChecked())
+            event.accept()
+            return
+        
+        # Default behavior
+        super().keyPressEvent(event)

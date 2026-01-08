@@ -83,12 +83,14 @@ class EnhancedDemoWindow(QMainWindow):
         editor_layout = QVBoxLayout(editor_widget)
         splitter.addWidget(editor_widget)
         
-        # Controls
+        # Editor (create before controls)
+        self.editor = CodeEditor()
+        
+        # Controls (now editor exists)
         controls = self._create_controls()
         editor_layout.addLayout(controls)
         
-        # Editor
-        self.editor = CodeEditor()
+        # Add editor to layout
         editor_layout.addWidget(self.editor)
         
         # Output section
