@@ -102,8 +102,8 @@ class SearchService:
                 if current_pos == last_position:
                     # Move forward to avoid infinite loop
                     next_pos = current_pos + 1
-                    # Validate position before setting
-                    if next_pos > self.document.characterCount():
+                    # Check if we've reached the end of the document
+                    if next_pos >= self.document.characterCount():
                         break
                     cursor.setPosition(next_pos)
                     cursor = self.document.find(regex, cursor, flags)
@@ -111,7 +111,7 @@ class SearchService:
                     continue
                 
                 # Validate cursor position is within document
-                if current_pos < 0 or current_pos > self.document.characterCount():
+                if current_pos < 0 or current_pos >= self.document.characterCount():
                     break
                 
                 match = SearchMatch(cursor)
@@ -219,6 +219,8 @@ class SearchPopup(QWidget):
         self.search_input.setMinimumWidth(200)
         # Live search as user types
         self.search_input.textChanged.connect(self._on_search)
+        # Install event filter to handle Alt shortcuts when input has focus
+        self.search_input.installEventFilter(self)
         search_row.addWidget(self.search_input)
         
         # Match count label
@@ -338,6 +340,40 @@ class SearchPopup(QWidget):
         self.activateWindow()  # Activate window
         self.search_input.setFocus(Qt.OtherFocusReason)
         self.search_input.selectAll()
+    
+    def eventFilter(self, obj, event) -> bool:
+        """Filter events for child widgets to handle shortcuts.
+        
+        This is necessary because keyboard shortcuts need to work even when
+        the search_input has focus.
+        """
+        if obj == self.search_input and event.type() == event.KeyPress:
+            # Handle Alt+C, Alt+R, Alt+W shortcuts
+            if event.modifiers() == Qt.AltModifier:
+                if event.key() == Qt.Key_C:
+                    self.case_checkbox.setChecked(not self.case_checkbox.isChecked())
+                    return True
+                elif event.key() == Qt.Key_R:
+                    self.regex_checkbox.setChecked(not self.regex_checkbox.isChecked())
+                    return True
+                elif event.key() == Qt.Key_W:
+                    self.whole_word_checkbox.setChecked(not self.whole_word_checkbox.isChecked())
+                    return True
+            
+            # Handle Enter/Shift+Enter
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                if event.modifiers() == Qt.ShiftModifier:
+                    self.previousRequested.emit()
+                else:
+                    self.nextRequested.emit()
+                return True
+            
+            # Handle Escape
+            elif event.key() == Qt.Key_Escape:
+                self.closeRequested.emit()
+                return True
+        
+        return super().eventFilter(obj, event)
     
     def keyPressEvent(self, event) -> None:
         """Handle key press events."""
