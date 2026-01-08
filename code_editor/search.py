@@ -327,8 +327,16 @@ class SearchPopup(QWidget):
         """
         if total > 0:
             self.match_label.setText(f"{current} of {total}")
+            self.match_label.setStyleSheet("")  # Reset style
         else:
-            self.match_label.setText("0 of 0")
+            # Show "No results" in red when search has no matches
+            pattern = self.search_input.text()
+            if pattern:  # Only show "No results" if there's a search query
+                self.match_label.setText("No results")
+                self.match_label.setStyleSheet("color: #cc0000;")  # Red text
+            else:
+                self.match_label.setText("0 of 0")
+                self.match_label.setStyleSheet("")  # Reset style
     
     def show_popup(self) -> None:
         """Show the popup and restore last search."""

@@ -63,9 +63,9 @@ class GotoLineOverlay(QWidget):
         
         layout.addWidget(self.line_input)
         
-        # Info label (shows feedback)
+        # Info label (shows feedback) - make it wider to fit "Out of range"
         self.info_label = QLabel("")
-        self.info_label.setMinimumWidth(100)
+        self.info_label.setMinimumWidth(150)  # Increased from 100 to 150
         layout.addWidget(self.info_label)
     
     def show_overlay(self, max_line: int) -> None:

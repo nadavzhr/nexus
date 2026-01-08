@@ -635,12 +635,18 @@ class CodeEditor(QPlainTextEdit):
     def _on_search_requested(self, pattern: str, case_sensitive: bool,
                              use_regex: bool, whole_word: bool) -> None:
         """Handle search request from popup."""
-        # Perform search
-        count = self._search_service.search(pattern, case_sensitive, use_regex, whole_word)
-        
-        # Clear previous highlights
+        # Clear previous highlights first (always clear when pattern changes)
         self.clear_decorations('search')
         self.clear_decorations('current_match')
+        
+        # If pattern is empty, just clear and update UI
+        if not pattern:
+            if self._search_popup:
+                self._search_popup.update_match_count(0, 0)
+            return
+        
+        # Perform search
+        count = self._search_service.search(pattern, case_sensitive, use_regex, whole_word)
         
         if count > 0:
             # Highlight all matches
@@ -664,11 +670,15 @@ class CodeEditor(QPlainTextEdit):
                 self.centerCursor()
             
             self._apply_decorations()
-        
-        # Update match count in popup
-        if self._search_popup:
-            current_idx = 1 if count > 0 else 0
-            self._search_popup.update_match_count(current_idx, count)
+            
+            # Update match count in popup
+            if self._search_popup:
+                current_idx = 1
+                self._search_popup.update_match_count(current_idx, count)
+        else:
+            # No matches found - show "No results"
+            if self._search_popup:
+                self._search_popup.update_match_count(0, 0)
     
     def _on_next_match(self) -> None:
         """Jump to next search match."""
@@ -708,6 +718,12 @@ class CodeEditor(QPlainTextEdit):
     
     def _on_search_closed(self) -> None:
         """Handle search popup close."""
+        # Clear all search highlights when closing
+        self.clear_decorations('search')
+        self.clear_decorations('current_match')
+        self._apply_decorations()
+        
+        # Hide the popup
         if self._search_popup:
             self._search_popup.hide()
     
