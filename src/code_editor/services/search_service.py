@@ -4,11 +4,11 @@ Search service.
 Handles the logic of finding matches in a document.
 """
 
-from typing import List
+from typing import List, Optional
 from PyQt5.QtCore import Qt, QRegExp
 from PyQt5.QtGui import QTextCursor, QTextDocument
 
-from ..models.search_model import SearchModel, SearchMatch
+from ..models.search_model import SearchMatch
 
 
 class SearchService:
@@ -16,11 +16,8 @@ class SearchService:
     Service layer for search functionality.
     
     Handles the logic of finding matches in a document without
-    concerning itself with UI. Uses SearchModel to store state.
+    concerning itself with UI.
     """
-    
-    # Safety limit to prevent infinite loops
-    MAX_ITERATIONS = 10000
     
     def __init__(self, document: QTextDocument):
         """
@@ -30,7 +27,12 @@ class SearchService:
             document: QTextDocument to search in
         """
         self.document = document
-        self.model = SearchModel()
+        self._matches: List[SearchMatch] = []
+        self._current_index: int = -1
+        self._last_pattern: str = ""
+        self._case_sensitive: bool = False
+        self._use_regex: bool = False
+        self._whole_word: bool = False
     
     def search(self, pattern: str, case_sensitive: bool = False,
                use_regex: bool = False, whole_word: bool = False) -> int:
@@ -46,39 +48,15 @@ class SearchService:
         Returns:
             Number of matches found
         """
-        # Update model
-        self.model.pattern = pattern
-        self.model.case_sensitive = case_sensitive
-        self.model.use_regex = use_regex
-        self.model.whole_word = whole_word
-        self.model.clear_matches()
+        self._matches.clear()
+        self._current_index = -1
+        self._last_pattern = pattern
+        self._case_sensitive = case_sensitive
+        self._use_regex = use_regex
+        self._whole_word = whole_word
         
         if not pattern:
             return 0
-        
-        # Find all matches
-        matches = self._find_all_matches(
-            pattern, case_sensitive, use_regex, whole_word
-        )
-        
-        self.model.set_matches(matches)
-        return self.model.match_count
-    
-    def _find_all_matches(self, pattern: str, case_sensitive: bool,
-                          use_regex: bool, whole_word: bool) -> List[SearchMatch]:
-        """
-        Find all matches in the document.
-        
-        Args:
-            pattern: Search pattern
-            case_sensitive: Case sensitivity flag
-            use_regex: Regex mode flag
-            whole_word: Whole word flag
-            
-        Returns:
-            List of SearchMatch objects
-        """
-        matches = []
         
         # Build search flags
         flags = QTextDocument.FindFlags()
@@ -87,131 +65,107 @@ class SearchService:
         if whole_word:
             flags |= QTextDocument.FindWholeWords
         
+        # Find all matches
         cursor = QTextCursor(self.document)
         last_position = -1
+        max_iterations = 10000  # Safety limit to prevent infinite loops
         iteration_count = 0
         
         if use_regex:
-            matches = self._find_regex_matches(pattern, flags, case_sensitive)
-        else:
-            matches = self._find_plain_matches(pattern, flags)
-        
-        return matches
-    
-    def _find_plain_matches(self, pattern: str,
-                           flags: QTextDocument.FindFlags) -> List[SearchMatch]:
-        """
-        Find all plain text matches.
-        
-        Args:
-            pattern: Plain text pattern
-            flags: Search flags
-            
-        Returns:
-            List of matches
-        """
-        matches = []
-        cursor = QTextCursor(self.document)
-        last_position = -1
-        iteration_count = 0
-        
-        while iteration_count < self.MAX_ITERATIONS:
-            cursor = self.document.find(pattern, cursor, flags)
-            
-            if cursor.isNull():
-                break
-            
-            current_position = cursor.position()
-            
-            # Safety check: ensure we're making progress
-            if current_position == last_position:
-                break
-            
-            # Validate position is within document bounds
-            if current_position >= self.document.characterCount():
-                break
-            
-            matches.append(SearchMatch.from_cursor(cursor))
-            last_position = current_position
-            iteration_count += 1
-        
-        return matches
-    
-    def _find_regex_matches(self, pattern: str,
-                           flags: QTextDocument.FindFlags,
-                           case_sensitive: bool) -> List[SearchMatch]:
-        """
-        Find all regex matches.
-        
-        Args:
-            pattern: Regex pattern
-            flags: Search flags
-            case_sensitive: Case sensitivity flag
-            
-        Returns:
-            List of matches
-        """
-        matches = []
-        
-        try:
+            # Use regex search
             regex = QRegExp(pattern)
             if not case_sensitive:
                 regex.setCaseSensitivity(Qt.CaseInsensitive)
             
-            cursor = QTextCursor(self.document)
-            last_position = -1
-            iteration_count = 0
-            
-            while iteration_count < self.MAX_ITERATIONS:
-                cursor = self.document.find(regex, cursor, flags)
-                
-                if cursor.isNull():
-                    break
-                
-                current_position = cursor.position()
-                
-                # Safety checks
-                if current_position == last_position:
-                    # Zero-width match - advance cursor
-                    cursor.movePosition(QTextCursor.NextCharacter)
-                    if cursor.position() == current_position:
-                        # Can't advance further
+            cursor = self.document.find(regex, cursor, flags)
+            while not cursor.isNull() and iteration_count < max_iterations:
+                # Prevent infinite loop with zero-width matches
+                current_pos = cursor.position()
+                if current_pos == last_position:
+                    # Move forward to avoid infinite loop
+                    next_pos = current_pos + 1
+                    # Check if we've reached the end of the document
+                    if next_pos >= self.document.characterCount():
                         break
+                    cursor.setPosition(next_pos)
+                    cursor = self.document.find(regex, cursor, flags)
+                    iteration_count += 1
                     continue
                 
-                # Validate position
-                if current_position >= self.document.characterCount():
+                # Validate cursor position is within document
+                if current_pos < 0 or current_pos >= self.document.characterCount():
                     break
                 
-                matches.append(SearchMatch.from_cursor(cursor))
-                last_position = current_position
+                match = SearchMatch.from_cursor(cursor)
+                self._matches.append(match)
+                last_position = current_pos
+                cursor = self.document.find(regex, cursor, flags)
                 iteration_count += 1
+        else:
+            # Use plain text search
+            cursor = self.document.find(pattern, cursor, flags)
+            while not cursor.isNull() and iteration_count < max_iterations:
+                # Prevent infinite loop
+                current_pos = cursor.position()
+                if current_pos == last_position:
+                    break
                 
-        except Exception:
-            # Invalid regex - return empty list
-            pass
+                # Validate cursor position
+                if current_pos < 0 or current_pos > self.document.characterCount():
+                    break
+                
+                match = SearchMatch.from_cursor(cursor)
+                self._matches.append(match)
+                last_position = current_pos
+                cursor = self.document.find(pattern, cursor, flags)
+                iteration_count += 1
         
-        return matches
+        if self._matches:
+            self._current_index = 0
+        
+        return len(self._matches)
     
-    def next_match(self) -> SearchMatch:
-        """
-        Move to the next match.
-        
-        Returns:
-            The next match, or None if no matches
-        """
-        return self.model.next_match()
+    def get_matches(self) -> List[SearchMatch]:
+        """Get all search matches."""
+        return self._matches
     
-    def previous_match(self) -> SearchMatch:
-        """
-        Move to the previous match.
-        
-        Returns:
-            The previous match, or None if no matches
-        """
-        return self.model.previous_match()
+    def get_current_match(self) -> Optional[SearchMatch]:
+        """Get the current match."""
+        if 0 <= self._current_index < len(self._matches):
+            return self._matches[self._current_index]
+        return None
+    
+    def next_match(self) -> Optional[SearchMatch]:
+        """Move to the next match."""
+        if not self._matches:
+            return None
+        self._current_index = (self._current_index + 1) % len(self._matches)
+        return self._matches[self._current_index]
+    
+    def previous_match(self) -> Optional[SearchMatch]:
+        """Move to the previous match."""
+        if not self._matches:
+            return None
+        self._current_index = (self._current_index - 1) % len(self._matches)
+        return self._matches[self._current_index]
+    
+    def get_last_pattern(self) -> str:
+        """Get the last search pattern."""
+        return self._last_pattern
+    
+    def get_last_case_sensitive(self) -> bool:
+        """Get the last case sensitivity setting."""
+        return self._case_sensitive
+    
+    def get_last_use_regex(self) -> bool:
+        """Get the last regex mode setting."""
+        return self._use_regex
+    
+    def get_last_whole_word(self) -> bool:
+        """Get the last whole word setting."""
+        return self._whole_word
     
     def clear(self) -> None:
-        """Clear all search state."""
-        self.model.clear_matches()
-        self.model.pattern = ""
+        """Clear all search results."""
+        self._matches.clear()
+        self._current_index = -1

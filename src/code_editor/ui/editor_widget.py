@@ -16,10 +16,11 @@ from PyQt5.QtWidgets import QPlainTextEdit, QWidget, QTextEdit, QShortcut
 # Import from new modular structure
 from .line_number_area import LineNumberArea
 from .goto_line_overlay import GotoLineOverlay
-from .search_popup import SearchService, SearchPopup
+from .search_popup import SearchPopup
 from ..highlighting.highlighter import PygmentsHighlighter
 from ..highlighting.theme import ThemeManager, Theme
 from ..services.decoration_service import DecorationService, DecorationLayer
+from ..services.search_service import SearchService
 from ..controllers.shortcut_controller import EditorActions
 
 # Keep backward compatibility imports from old locations
@@ -659,12 +660,16 @@ class CodeEditor(QPlainTextEdit):
         last_pattern = self._search_service.get_last_pattern()
         if last_pattern:
             self._search_popup.set_pattern(last_pattern)
-            # Highlight based on last search
+            # Restore checkbox states from last search
+            self._search_popup.set_case_sensitive(self._search_service.get_last_case_sensitive())
+            self._search_popup.set_use_regex(self._search_service.get_last_use_regex())
+            self._search_popup.set_whole_word(self._search_service.get_last_whole_word())
+            # Highlight based on last search with proper state restoration
             self._on_search_requested(
                 last_pattern,
-                False,
-                False,
-                False
+                self._search_service.get_last_case_sensitive(),
+                self._search_service.get_last_use_regex(),
+                self._search_service.get_last_whole_word()
             )
 
 
