@@ -4,7 +4,7 @@ import sys
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QTimer
 from code_editor import CodeEditor
-from code_editor.highlighter import get_lexer_for_language
+from code_editor.highlighting.highlighter import get_lexer_for_language
 
 app = QApplication(sys.argv)
 

@@ -10,7 +10,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor
 
 from code_editor import CodeEditor, LineData
-from code_editor.highlighter import get_lexer_for_language
+from code_editor.highlighting.highlighter import get_lexer_for_language
 
 # Create QApplication (required even for non-GUI tests)
 app = QApplication(sys.argv)

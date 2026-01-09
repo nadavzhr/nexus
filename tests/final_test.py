@@ -18,7 +18,7 @@ try:
         CodeEditor, LineData, Theme, ThemeManager,
         SearchService, SearchPopup, EditorActions
     )
-    from code_editor.highlighter import get_lexer_for_language
+    from code_editor.highlighting.highlighter import get_lexer_for_language
     print("   ✅ All imports successful")
 except Exception as e:
     print(f"   ❌ Import failed: {e}")

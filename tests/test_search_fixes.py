@@ -8,7 +8,7 @@ from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtTest import QTest
 
 from code_editor import CodeEditor
-from code_editor.highlighter import get_lexer_for_language
+from code_editor.highlighting.highlighter import get_lexer_for_language
 
 app = QApplication([])
 
