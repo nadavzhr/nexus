@@ -33,6 +33,7 @@ class SearchService:
         self._case_sensitive: bool = False
         self._use_regex: bool = False
         self._whole_word: bool = False
+        self._search_performed: bool = False  # Track if a search was performed
     
     def search(self, pattern: str, case_sensitive: bool = False,
                use_regex: bool = False, whole_word: bool = False) -> int:
@@ -54,6 +55,7 @@ class SearchService:
         self._case_sensitive = case_sensitive
         self._use_regex = use_regex
         self._whole_word = whole_word
+        self._search_performed = True  # Mark that we performed a search
         
         if not pattern:
             return 0
@@ -182,18 +184,19 @@ class SearchService:
         """
         Check if a new search is needed for the given criteria.
         
-        Returns True if the search parameters have changed or no matches exist.
-        Returns False if we already have matches for these exact parameters.
+        Returns True if the search parameters have changed or no search performed yet.
+        Returns False if we already searched with these exact parameters.
         """
         return (
+            not self._search_performed or
             pattern != self._last_pattern or
             case_sensitive != self._case_sensitive or
             use_regex != self._use_regex or
-            whole_word != self._whole_word or
-            len(self._matches) == 0
+            whole_word != self._whole_word
         )
     
     def clear(self) -> None:
-        """Clear all search results."""
+        """Clear all search results and reset search state."""
         self._matches.clear()
         self._current_index = -1
+        self._search_performed = False
