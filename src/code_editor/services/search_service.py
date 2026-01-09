@@ -111,7 +111,7 @@ class SearchService:
                     break
                 
                 # Validate cursor position
-                if current_pos < 0 or current_pos > self.document.characterCount():
+                if current_pos < 0 or current_pos >= self.document.characterCount():
                     break
                 
                 match = SearchMatch.from_cursor(cursor)
@@ -164,6 +164,34 @@ class SearchService:
     def get_last_whole_word(self) -> bool:
         """Get the last whole word setting."""
         return self._whole_word
+    
+    def get_current_index(self) -> int:
+        """Get the current match index (0-based)."""
+        return self._current_index
+    
+    def has_matches(self) -> bool:
+        """Check if there are any matches."""
+        return len(self._matches) > 0
+    
+    def match_count(self) -> int:
+        """Get the total number of matches."""
+        return len(self._matches)
+    
+    def needs_research(self, pattern: str, case_sensitive: bool, 
+                      use_regex: bool, whole_word: bool) -> bool:
+        """
+        Check if a new search is needed for the given criteria.
+        
+        Returns True if the search parameters have changed or no matches exist.
+        Returns False if we already have matches for these exact parameters.
+        """
+        return (
+            pattern != self._last_pattern or
+            case_sensitive != self._case_sensitive or
+            use_regex != self._use_regex or
+            whole_word != self._whole_word or
+            len(self._matches) == 0
+        )
     
     def clear(self) -> None:
         """Clear all search results."""

@@ -664,32 +664,88 @@ class CodeEditor(QPlainTextEdit):
             self._search_popup.set_case_sensitive(self._search_service.get_last_case_sensitive())
             self._search_popup.set_use_regex(self._search_service.get_last_use_regex())
             self._search_popup.set_whole_word(self._search_service.get_last_whole_word())
-            # Highlight based on last search with proper state restoration
-            self._on_search_requested(
-                last_pattern,
-                self._search_service.get_last_case_sensitive(),
-                self._search_service.get_last_use_regex(),
-                self._search_service.get_last_whole_word()
-            )
+            
+            # Check if we need to re-search or just restore highlights
+            if self._search_service.has_matches():
+                # We already have matches - just restore highlights at current position
+                self._restore_search_highlights()
+            else:
+                # No matches yet - perform initial search
+                self._on_search_requested(
+                    last_pattern,
+                    self._search_service.get_last_case_sensitive(),
+                    self._search_service.get_last_use_regex(),
+                    self._search_service.get_last_whole_word()
+                )
 
 
         # Show existing instance (don't recreate)
         self._search_popup.show_popup()
     
-    def _on_search_requested(self, pattern: str, case_sensitive: bool,
-                             use_regex: bool, whole_word: bool) -> None:
-        """Handle search request from popup (using DecorationService)."""
-        # Clear previous highlights first (always clear when pattern changes)
+    def _restore_search_highlights(self) -> None:
+        """Restore search highlights from existing matches without re-searching."""
+        # Clear previous highlights first
         self._decoration_service.clear_layer(DecorationLayer.SEARCH_MATCHES)
         self._decoration_service.clear_layer(DecorationLayer.CURRENT_MATCH)
         
+        matches = self._search_service.get_matches()
+        if not matches:
+            self._decoration_service.apply()
+            return
+        
+        # Highlight all matches
+        theme = self._theme_manager.get_current_theme()
+        for match in matches:
+            self._decoration_service.add_decoration(
+                DecorationLayer.SEARCH_MATCHES,
+                match.cursor,
+                theme.search_match
+            )
+        
+        # Highlight current match distinctly (top layer)
+        current_match = self._search_service.get_current_match()
+        if current_match:
+            self._decoration_service.add_decoration(
+                DecorationLayer.CURRENT_MATCH,
+                current_match.cursor,
+                theme.current_match
+            )
+            
+            # Move editor to current match
+            self.setTextCursor(current_match.cursor)
+            self.centerCursor()
+        
+        # Apply all decorations atomically
+        self._decoration_service.apply()
+        
+        # Update match count in popup
+        if self._search_popup:
+            current_idx = self._search_service.get_current_index() + 1  # Convert to 1-based
+            self._search_popup.update_match_count(current_idx, len(matches))
+    
+    def _on_search_requested(self, pattern: str, case_sensitive: bool,
+                             use_regex: bool, whole_word: bool) -> None:
+        """Handle search request from popup (using DecorationService)."""
         # If pattern is empty, clear search service and update UI
         if not pattern:
+            # Clear previous highlights
+            self._decoration_service.clear_layer(DecorationLayer.SEARCH_MATCHES)
+            self._decoration_service.clear_layer(DecorationLayer.CURRENT_MATCH)
             self._search_service.clear()  # Clear the matches from the service
             self._decoration_service.apply()
             if self._search_popup:
                 self._search_popup.update_match_count(0, 0)
             return
+        
+        # Check if we need to re-search or just restore existing highlights
+        if not self._search_service.needs_research(pattern, case_sensitive, use_regex, whole_word):
+            # Same search criteria and we have matches - just restore highlights
+            self._restore_search_highlights()
+            return
+        
+        # Clear previous highlights (we're doing a new search)
+        self._decoration_service.clear_layer(DecorationLayer.SEARCH_MATCHES)
+        self._decoration_service.clear_layer(DecorationLayer.CURRENT_MATCH)
         
         # Perform search
         count = self._search_service.search(pattern, case_sensitive, use_regex, whole_word)
