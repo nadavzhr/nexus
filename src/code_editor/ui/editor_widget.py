@@ -352,7 +352,7 @@ class CodeEditor(QPlainTextEdit):
         self._decoration_service.add_decoration(
             DecorationLayer.CUSTOM,
             cursor,
-            color,
+            bg_color,
             full_width=True
         )
         self._decoration_service.apply()
