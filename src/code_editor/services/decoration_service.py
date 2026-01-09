@@ -41,7 +41,7 @@ class Decoration:
         self.bg_color = bg_color
         self.full_width = full_width
     
-    def to_extra_selection(self):
+    def to_extra_selection(self) -> 'QTextEdit.ExtraSelection':
         """Convert to QTextEdit.ExtraSelection."""
         from PyQt5.QtWidgets import QTextEdit
         selection = QTextEdit.ExtraSelection()

@@ -584,14 +584,14 @@ class CodeEditor(QPlainTextEdit):
                     self.add_decoration(line_number, hover_color, 'hover')
                 self._last_hover_line = line_number
     
-    def leaveEvent(self, event) -> None:
+    def leaveEvent(self, event: Any) -> None:
         """Handle mouse leave events."""
         super().leaveEvent(event)
         if self._hover_enabled:
             self.clear_decorations('hover')
             self._last_hover_line = -1
     
-    def keyPressEvent(self, event) -> None:
+    def keyPressEvent(self, event: Any) -> None:
         """Handle key press events for smart copy/cut/paste."""
         from PyQt5.QtCore import Qt
         
