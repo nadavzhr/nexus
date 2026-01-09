@@ -681,12 +681,16 @@ class CodeEditor(QPlainTextEdit):
             self._search_popup.replaceRequested.connect(self._on_replace_current)
             self._search_popup.replaceAllRequested.connect(self._on_replace_all)
         
-        # Position popup at top-right corner
+        # Position popup at top-right corner (in global coordinates since it's a tool window)
         popup_width = self._search_popup.sizeHint().width()
         popup_height = self._search_popup.sizeHint().height()
-        x = self.width() - popup_width - 20
-        y = 10
-        self._search_popup.setGeometry(x, y, popup_width, popup_height)
+        
+        # Convert editor's top-right position to global coordinates
+        editor_global_pos = self.mapToGlobal(self.rect().topRight())
+        x = editor_global_pos.x() - popup_width - 20
+        y = editor_global_pos.y() + 10
+        self._search_popup.move(x, y)
+        self._search_popup.resize(popup_width, popup_height)
         
         # Restore last search
         last_pattern = self._search_service.get_last_pattern()

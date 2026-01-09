@@ -39,12 +39,13 @@ class SearchPopup(QWidget):
         self._last_pattern = ""
         self._replace_mode = False  # Track if replace UI is shown
         
-        # Make it a floating widget that captures keyboard input
-        self.setWindowFlags(Qt.Widget)
+        # Make it an independent tool window (not a child widget)
+        # This gives it its own focus context, completely isolated from parent
+        # Qt's tab navigation works naturally within the tool window
+        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAutoFillBackground(True)
         
-        # Set focus policy - container is focusable
-        # Use setFocusProxy to delegate to search_input (the entry point)
+        # Set focus policy for the popup
         self.setFocusPolicy(Qt.StrongFocus)
     
     def _setup_ui(self) -> None:
@@ -165,12 +166,7 @@ class SearchPopup(QWidget):
         
         layout.addLayout(options_row)
         
-        # Set focus proxy - when this widget receives focus, it goes to search_input
-        # This is the Qt-native way to handle composite widgets
-        self.setFocusProxy(self.search_input)
-        
-        # Install event filter only on input widgets for shortcuts
-        # (Tab handling is now automatic via Qt's focus chain)
+        # Install event filter for popup-specific shortcuts
         self.search_input.installEventFilter(self)
         self.replace_input.installEventFilter(self)
         
@@ -315,8 +311,8 @@ class SearchPopup(QWidget):
             self._replace_mode = False
             self.replace_widget.setVisible(False)
             self.toggle_replace_btn.setText("▶")
-            self.adjustSize()
         
+        # Show the tool window
         self.show()
         self.raise_()  # Bring to front
         self.activateWindow()  # Activate window
@@ -331,8 +327,7 @@ class SearchPopup(QWidget):
         """Filter events for input widgets to handle popup-specific shortcuts.
         
         This handles shortcuts that are specific to the search popup.
-        Tab navigation is now handled natively by Qt's focus system.
-        Global shortcuts like Ctrl+H are handled by the parent editor widget's shortcut system.
+        Tab navigation works automatically via Qt's focus system (popup is a tool window).
         """
         # Don't process events if popup is hidden
         if not self.isVisible():
@@ -375,44 +370,3 @@ class SearchPopup(QWidget):
                 return True
         
         return super().eventFilter(obj, event)
-    
-    def focusNextPrevChild(self, forward: bool) -> bool:
-        """
-        Override focus navigation to keep Tab/Shift+Tab within the popup.
-        
-        This is the Qt-native way to constrain focus navigation to a widget subtree.
-        We let Qt handle the actual navigation logic - we just prevent it from
-        leaving the popup boundary.
-        
-        Args:
-            forward: True for Tab (next), False for Shift+Tab (previous)
-            
-        Returns:
-            True if focus was changed, False otherwise
-        """
-        # Let Qt handle navigation within our widget tree
-        # Qt automatically skips hidden/disabled widgets
-        result = super().focusNextPrevChild(forward)
-        
-        # If Qt moved focus outside our widget (to parent's widgets),
-        # wrap it back to our first/last focusable child
-        focused = self.focusWidget()
-        if focused is None or not self.isAncestorOf(focused):
-            # Focus escaped our widget tree - wrap it back
-            if forward:
-                # Wrap to first focusable widget
-                self.search_input.setFocus(Qt.TabFocusReason)
-            else:
-                # Wrap to last focusable widget
-                # Try checkboxes in reverse order
-                if self.whole_word_checkbox.isVisible():
-                    self.whole_word_checkbox.setFocus(Qt.BacktabFocusReason)
-                elif self.regex_checkbox.isVisible():
-                    self.regex_checkbox.setFocus(Qt.BacktabFocusReason)
-                elif self.case_checkbox.isVisible():
-                    self.case_checkbox.setFocus(Qt.BacktabFocusReason)
-                else:
-                    self.search_input.setFocus(Qt.BacktabFocusReason)
-            return True
-        
-        return result
