@@ -225,7 +225,7 @@ class SearchPopup(QWidget):
         
         # Match count label
         self.match_label = QLabel("0 of 0")
-        self.match_label.setMinimumWidth(50)
+        self.match_label.setMinimumWidth(100)
         search_row.addWidget(self.match_label)
         
         # Previous button
