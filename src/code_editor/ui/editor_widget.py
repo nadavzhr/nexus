@@ -5,7 +5,7 @@ This module provides the main CodeEditor widget and LineData classes.
 """
 
 from typing import Optional, Any, Dict, List
-from PyQt5.QtCore import Qt, pyqtSignal, QRect
+from PyQt5.QtCore import Qt, pyqtSignal, pyqtProperty, QRect
 from PyQt5.QtGui import (
     QTextBlockUserData, QColor, QPainter, QTextFormat,
     QTextCursor, QPaintEvent, QMouseEvent, QResizeEvent, QTextDocument,
@@ -220,6 +220,45 @@ class CodeEditor(QPlainTextEdit):
         
         # Apply initial theme
         self._apply_theme()
+    
+    # ==================== Qt Properties (for Qt Designer / QML integration) ====================
+    
+    @pyqtProperty(str)
+    def currentLanguage(self) -> str:
+        """
+        Qt property for the current language.
+        
+        Allows accessing/setting the language in Qt Designer and QML.
+        """
+        return self._current_language or ""
+    
+    @currentLanguage.setter
+    def currentLanguage(self, name: str) -> None:
+        """Set the current language via Qt property."""
+        if name:
+            self.set_language(name)
+    
+    @pyqtProperty(bool)
+    def hoverEnabled(self) -> bool:
+        """Qt property for hover highlighting state."""
+        return self._hover_enabled
+    
+    @hoverEnabled.setter
+    def hoverEnabled(self, enabled: bool) -> None:
+        """Set hover enabled via Qt property."""
+        self.set_hover_enabled(enabled)
+    
+    @pyqtProperty(bool)
+    def currentLineHighlightEnabled(self) -> bool:
+        """Qt property for current line highlighting state."""
+        return self._current_line_highlight_enabled
+    
+    @currentLineHighlightEnabled.setter
+    def currentLineHighlightEnabled(self, enabled: bool) -> None:
+        """Set current line highlight enabled via Qt property."""
+        self.set_current_line_highlight_enabled(enabled)
+    
+    # ==================== Private Setup Methods ====================
     
     def _setup_ui(self) -> None:
         """Configure the editor's appearance and behavior."""

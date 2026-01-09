@@ -22,7 +22,8 @@ from .ui.editor_widget import CodeEditor
 
 # Data models
 from .models.line_data import LineData
-from .models.search_model import SearchModel
+from .models.search_model import SearchModel, SearchMatch
+from .models.editor_config import EditorConfig
 
 # Services
 from .services.decoration_service import DecorationService, DecorationLayer
@@ -48,6 +49,8 @@ __all__ = [
     
     # Models
     'SearchModel',
+    'SearchMatch',
+    'EditorConfig',
     
     # Services
     'DecorationService',

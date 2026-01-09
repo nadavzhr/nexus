@@ -1,10 +1,11 @@
 """
 Data models for the code editor.
 
-This module contains pure data models with no Qt UI dependencies.
+This module contains pure data structures with minimal logic.
 """
 
 from .line_data import LineData
-from .search_model import SearchModel
+from .search_model import SearchModel, SearchMatch
+from .editor_config import EditorConfig
 
-__all__ = ['LineData', 'SearchModel']
+__all__ = ['LineData', 'SearchModel', 'SearchMatch', 'EditorConfig']
