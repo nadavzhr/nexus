@@ -25,6 +25,13 @@ from ..services.language_service import LanguageService
 from ..controllers.shortcut_controller import EditorActions
 from ..models.line_data import LineData
 
+# Import protocols for proper type hints (demonstrates correct usage)
+from ..protocols import (
+    SearchServiceProtocol,
+    DecorationServiceProtocol,
+    LanguageServiceProtocol
+)
+
 # Keep backward compatibility imports from old locations
 try:
     from .line_numbers import LineNumberArea as _  # noqa
@@ -198,11 +205,12 @@ class CodeEditor(QPlainTextEdit):
         self._line_number_area = LineNumberArea(self)
         self._highlighter: Optional[PygmentsHighlighter] = None
         
-        # Services (business logic)
+        # Services (business logic) - TYPED AS PROTOCOLS
+        # This demonstrates proper protocol usage for dependency injection
         self._theme_manager = ThemeManager()
-        self._language_service = LanguageService()
-        self._search_service = SearchService(self.document())
-        self._decoration_service = DecorationService(self)
+        self._language_service: LanguageServiceProtocol = LanguageService()
+        self._search_service: SearchServiceProtocol = SearchService(self.document())
+        self._decoration_service: DecorationServiceProtocol = DecorationService(self)
         
         # Controllers
         self._actions = EditorActions(self)
@@ -619,6 +627,13 @@ class CodeEditor(QPlainTextEdit):
     def keyPressEvent(self, event: QKeyEvent) -> None:
         """Handle key press events for smart copy/cut/paste."""
         from PyQt5.QtCore import Qt
+        
+        # CRITICAL FIX: Prevent Tab from adding '\t' when search popup is open
+        # Tab should navigate within popup, not insert text in editor
+        if self._search_popup and self._search_popup.isVisible():
+            if event.key() == Qt.Key_Tab or event.key() == Qt.Key_Backtab:
+                # Ignore Tab - let popup handle focus navigation
+                return
         
         # Handle Ctrl+C when no selection - copy current line
         if event.key() == Qt.Key_C and event.modifiers() == Qt.ControlModifier:
