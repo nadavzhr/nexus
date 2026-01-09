@@ -659,7 +659,15 @@ class CodeEditor(QPlainTextEdit):
         last_pattern = self._search_service.get_last_pattern()
         if last_pattern:
             self._search_popup.set_pattern(last_pattern)
-        
+            # Highlight based on last search
+            self._on_search_requested(
+                last_pattern,
+                False,
+                False,
+                False
+            )
+
+
         # Show existing instance (don't recreate)
         self._search_popup.show_popup()
     
@@ -670,8 +678,9 @@ class CodeEditor(QPlainTextEdit):
         self._decoration_service.clear_layer(DecorationLayer.SEARCH_MATCHES)
         self._decoration_service.clear_layer(DecorationLayer.CURRENT_MATCH)
         
-        # If pattern is empty, just clear and update UI
+        # If pattern is empty, clear search service and update UI
         if not pattern:
+            self._search_service.clear()  # Clear the matches from the service
             self._decoration_service.apply()
             if self._search_popup:
                 self._search_popup.update_match_count(0, 0)
@@ -761,9 +770,13 @@ class CodeEditor(QPlainTextEdit):
         self._decoration_service.clear_layer(DecorationLayer.CURRENT_MATCH)
         self._decoration_service.apply()
         
-        # Hide the popup
+        # Hide the popup and return focus to editor
         if self._search_popup:
             self._search_popup.hide()
+            self._search_popup.clearFocus()  # Clear focus from popup
+        
+        # Return focus to the editor
+        self.setFocus()
     
     # ==================== Keyboard Shortcut Actions (Public API) ====================
     

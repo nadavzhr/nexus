@@ -5,7 +5,7 @@ Manages programming language lexers and registration.
 """
 
 from typing import Dict, Optional, Any
-
+from pygments.lexer import Lexer
 
 class LanguageService:
     """
@@ -19,7 +19,7 @@ class LanguageService:
         self._languages: Dict[str, Any] = {}
         self._current_language: Optional[str] = None
     
-    def register_language(self, name: str, lexer: Any) -> None:
+    def register_language(self, name: str, lexer: Lexer) -> None:
         """
         Register a language with its lexer.
         

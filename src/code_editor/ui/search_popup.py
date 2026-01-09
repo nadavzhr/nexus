@@ -224,7 +224,7 @@ class SearchPopup(QWidget):
         search_row.addWidget(self.search_input)
         
         # Match count label
-        self.match_label = QLabel("0 of 0")
+        self.match_label = QLabel("No results")
         self.match_label.setMinimumWidth(100)
         search_row.addWidget(self.match_label)
         
@@ -299,14 +299,13 @@ class SearchPopup(QWidget):
     def _on_search(self) -> None:
         """Handle search request."""
         pattern = self.search_input.text()
-        if pattern:
-            self._last_pattern = pattern
-            self.searchRequested.emit(
-                pattern,
-                self.case_checkbox.isChecked(),
-                self.regex_checkbox.isChecked(),
-                self.whole_word_checkbox.isChecked()
-            )
+        self._last_pattern = pattern
+        self.searchRequested.emit(
+            pattern,
+            self.case_checkbox.isChecked(),
+            self.regex_checkbox.isChecked(),
+            self.whole_word_checkbox.isChecked()
+        )
     
     def set_pattern(self, pattern: str) -> None:
         """Set the search pattern."""
@@ -335,7 +334,7 @@ class SearchPopup(QWidget):
                 self.match_label.setText("No results")
                 self.match_label.setStyleSheet("color: #cc0000;")  # Red text
             else:
-                self.match_label.setText("0 of 0")
+                self.match_label.setText("No results")
                 self.match_label.setStyleSheet("")  # Reset style
     
     def show_popup(self) -> None:
@@ -355,6 +354,10 @@ class SearchPopup(QWidget):
         This is necessary because keyboard shortcuts need to work even when
         the search_input has focus.
         """
+        # Don't process events if popup is hidden
+        if not self.isVisible():
+            return super().eventFilter(obj, event)
+        
         if obj == self.search_input and event.type() == event.KeyPress:
             # Handle Alt+C, Alt+R, Alt+W shortcuts
             if event.modifiers() == Qt.AltModifier:
@@ -385,6 +388,11 @@ class SearchPopup(QWidget):
     
     def keyPressEvent(self, event) -> None:
         """Handle key press events."""
+        # Don't process events if popup is hidden
+        if not self.isVisible():
+            super().keyPressEvent(event)
+            return
+        
         # Enter - Next match
         if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
             if event.modifiers() == Qt.ShiftModifier:
