@@ -158,7 +158,25 @@ class CodeEditor(QPlainTextEdit):
     - Controllers: EditorActions (keyboard shortcuts and actions)
     - UI: SearchPopup, GotoLineOverlay, LineNumberArea (presentation)
     
-    All services are injected and can be accessed/replaced for customization.
+    Service Access (for advanced customization):
+    ============================================
+    Services are accessible through properties and can be extended/replaced:
+    - self._decoration_service: DecorationService instance
+    - self._search_service: SearchService instance
+    - self._theme_manager: ThemeManager instance
+    - self._actions: EditorActions controller
+    
+    All services follow defined protocols (see code_editor.protocols module)
+    for easy mocking, testing, and alternative implementations.
+    
+    Example - Custom Search Service:
+    ```python
+    editor = CodeEditor()
+    # Access existing service
+    search_service = editor._search_service
+    # Or replace with custom implementation following SearchServiceProtocol
+    editor._search_service = MyCustomSearchService(editor.document())
+    ```
     """
     
     # Signals with comprehensive documentation above
