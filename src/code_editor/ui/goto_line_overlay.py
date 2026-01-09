@@ -63,7 +63,6 @@ class GotoLineOverlay(QWidget):
         
         layout.addWidget(self.line_input)
         
-        # Info label (shows feedback) - make it wider to fit "Out of range"
         self.info_label = QLabel("")
         self.info_label.setMinimumWidth(150)  # Increased from 100 to 150
         layout.addWidget(self.info_label)
@@ -124,12 +123,13 @@ class GotoLineOverlay(QWidget):
         
         try:
             line_num = int(text)
-            if 1 <= line_num <= self._max_line:
-                self.info_label.setText(f"✓ Line {line_num}")
-                # Emit live update signal (optional, for live cursor movement)
-                self._emit_live_jump(line_num)
-            else:
-                self.info_label.setText(f"✗ Out of range")
+            if line_num < 1:
+                line_num = 1
+            elif line_num > self._max_line:
+                line_num = self._max_line
+            self.jumpRequested.emit(line_num)  # Live jump signal
+            self.info_label.setText(f"✓ Line {line_num}")
+                
         except ValueError:
             self.info_label.setText("✗ Invalid")
     
@@ -152,11 +152,12 @@ class GotoLineOverlay(QWidget):
         
         try:
             line_num = int(text)
-            if 1 <= line_num <= self._max_line:
-                self.jumpRequested.emit(line_num)
-                self.hide()
-            else:
-                self.info_label.setText(f"✗ Out of range (1-{self._max_line})")
+            if line_num < 1:
+                line_num = 1
+            elif line_num > self._max_line:
+                line_num = self._max_line
+            self.jumpRequested.emit(line_num)
+            self.hide()
         except ValueError:
             self.info_label.setText("✗ Invalid number")
     

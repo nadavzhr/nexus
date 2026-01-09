@@ -618,7 +618,7 @@ class CodeEditor(QPlainTextEdit):
             self._decoration_service.add_decoration(
                 DecorationLayer.CURRENT_LINE,
                 cursor,
-                theme.current_line_bg,
+                theme.current_line,
                 full_width=True
             )
             self._decoration_service.apply()
