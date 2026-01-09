@@ -10,17 +10,43 @@ from PyQt5.QtGui import QPalette, QIntValidator
 
 
 class GotoLineOverlay(QWidget):
-    """Overlay widget for jumping to a line number.
+    """
+    VS Code-style goto line overlay widget - self-contained and reusable.
     
-    This widget appears at the top-center of the editor when invoked,
-    and provides live feedback as the user types a line number.
+    A floating overlay that appears at the top-center of the parent widget,
+    allowing users to jump to a specific line number with live preview.
+    
+    The widget is fully self-contained and manages its own:
+    - Line number input with validation (integers only, 1-max range)
+    - Live feedback showing current/max line numbers
+    - Live preview (emits jumpRequested as user types)
+    - Keyboard handling (Enter to confirm, Escape to cancel)
     
     Signals:
-        jumpRequested(int): Emitted when user presses Enter with a valid line number
-        closeRequested(): Emitted when user presses Escape or cancels
+        jumpRequested(int): Emitted when user types/confirms a valid line number.
+            Args: line_number (int, 1-based)
+            Note: Emitted during typing for live preview AND on Enter confirmation
+        
+        closeRequested(): Emitted when user cancels or closes the overlay.
+            Triggered by: Escape key, empty input + Enter
+    
+    Public API Methods:
+        - show_overlay(int): Show overlay with specified max line number
+        - hide_overlay(): Hide the overlay
+    
+    Usage Example:
+        ```python
+        overlay = GotoLineOverlay(parent_widget)
+        overlay.jumpRequested.connect(lambda line: print(f"Jump to {line}"))
+        overlay.closeRequested.connect(lambda: editor.setFocus())
+        overlay.show_overlay(max_line=100)
+        ```
+    
+    The overlay automatically positions itself at the top-center of its parent
+    and provides visual feedback as the user types.
     """
     
-    jumpRequested = pyqtSignal(int)
+    jumpRequested = pyqtSignal(int)  # line_number (1-based)
     closeRequested = pyqtSignal()
     
     def __init__(self, parent=None):

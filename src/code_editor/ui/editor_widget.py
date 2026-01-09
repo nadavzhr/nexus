@@ -33,24 +33,137 @@ except ImportError:
 
 class CodeEditor(QPlainTextEdit):
     """
-    Standalone multi-language code editor widget.
+    Professional multi-language code editor widget - self-contained and production-ready.
     
-    A professional code editor built on QPlainTextEdit with:
-    - Multi-language syntax highlighting via Pygments
-    - Line-aware data model (QTextBlock + LineData)
-    - Line numbering gutter
-    - Search and decoration support
-    - Read-only and editable modes
-    - Clean public API for integration
+    A standalone code editor built on QPlainTextEdit, designed for easy integration
+    into large-scale applications. Provides a rich API through methods and signals
+    for complete control without requiring subclassing.
+    
+    Core Features:
+    ===============
+    - **Multi-language syntax highlighting**: Via Pygments, with support for custom lexers
+    - **Line-aware data model**: Attach metadata to individual lines (LineData)
+    - **Line numbering gutter**: Auto-sizing, theme-aware
+    - **VS Code-style search**: Popup with regex, case, whole-word options + replace
+    - **Go to line overlay**: Quick navigation with Ctrl+G
+    - **Decorations**: Highlight lines with custom colors (search, current line, custom)
+    - **Theme support**: Light/dark themes with custom theme registration
+    - **Keyboard shortcuts**: Comment toggle, duplicate line, move line, etc.
+    - **Read-only mode**: With line activation (double-click) support
+    - **VS Code-style copy/paste**: Copy full line when no selection
     
     Signals:
-        lineActivated: Emitted when a line is activated (double-clicked in read-only mode)
-        cursorMoved: Emitted when the cursor position changes
+    ========
+    lineActivated(int, object):
+        Emitted when a line is activated (double-clicked) in read-only mode.
+        Args:
+            line_number (int): 0-based line number
+            line_data (object): LineData.payload if exists, None otherwise
+        
+        Usage: Connect to open file, jump to definition, etc.
+        Example: editor.lineActivated.connect(lambda num, data: print(f"Line {num}: {data}"))
+    
+    cursorMoved(int):
+        Emitted when the cursor position changes (line number changes).
+        Args:
+            line_number (int): 0-based line number of new cursor position
+        
+        Usage: Update status bar, line info displays, etc.
+        Example: editor.cursorMoved.connect(lambda num: status.setText(f"Line {num + 1}"))
+    
+    Public API - Document & Lines:
+    ==============================
+    - get_line_data(line_number: int) -> Optional[LineData]: Get line metadata
+    - set_line_data(line_number: int, data: LineData) -> bool: Set line metadata
+    - create_line_data(line_number: int, payload=None, bg_color=None) -> bool: Create and set
+    - get_line_text(line_number: int) -> Optional[str]: Get line text
+    - line_count() -> int: Total number of lines
+    
+    Public API - Language & Highlighting:
+    =====================================
+    - register_language(name: str, lexer, file_extensions: List[str]): Add language support
+    - set_language(name: str) -> bool: Activate syntax highlighting for language
+    - get_current_language() -> Optional[str]: Get active language name
+    - disable_highlighting(): Turn off syntax highlighting
+    
+    Public API - Search & Navigation:
+    =================================
+    - show_search_popup(): Show VS Code-style search widget (Ctrl+F)
+    - show_replace_popup(): Show search with replace mode (Ctrl+H)
+    - hide_search_popup(): Programmatically hide search
+    - search(pattern: str, regex: bool) -> int: Programmatic search (returns match count)
+    - clear_search(): Clear search highlights
+    - go_to_line(): Show goto line overlay (Ctrl+G)
+    - jump_to_line(line_number: int): Programmatically jump to line
+    
+    Public API - Decorations:
+    =========================
+    - add_decoration(line_number: int, bg_color: QColor, type: str): Highlight a line
+    - clear_decorations(type: Optional[str]): Clear decorations by type or all
+    
+    Public API - Themes:
+    ====================
+    - set_theme(name: str): Switch theme ('light', 'dark', or custom)
+    - get_current_theme() -> Theme: Get active theme object
+    - register_theme(theme: Theme): Add custom theme
+    - list_themes() -> List[str]: Get available theme names
+    
+    Public API - Keyboard Actions:
+    ==============================
+    - toggle_comment(): Comment/uncomment line or selection (Ctrl+/)
+    - duplicate_line(): Duplicate current line (Ctrl+D)
+    - move_line_up(): Move line up (Alt+Up)
+    - move_line_down(): Move line down (Alt+Down)
+    - copy_line(): Copy full line to clipboard (Ctrl+C with no selection)
+    - cut_line(): Cut full line to clipboard (Ctrl+X with no selection)
+    - paste_line(): Paste with line-aware behavior (Ctrl+V)
+    
+    Public API - Configuration:
+    ===========================
+    - setReadOnly(bool) / setEditable(bool): Control edit mode
+    - set_hover_enabled(bool): Enable/disable hover in read-only mode
+    - set_current_line_highlight_enabled(bool): Toggle current line highlight
+    
+    Usage Example:
+    ==============
+    ```python
+    from PyQt5.QtWidgets import QApplication
+    from code_editor import CodeEditor
+    from code_editor.highlighting.highlighter import get_lexer_for_language
+    
+    app = QApplication([])
+    
+    # Create and configure editor
+    editor = CodeEditor()
+    editor.register_language('python', get_lexer_for_language('python'))
+    editor.set_language('python')
+    
+    # Set content
+    editor.setPlainText("def hello():\\n    print('Hello!')")
+    
+    # Connect signals
+    editor.cursorMoved.connect(lambda line: print(f"Line: {line + 1}"))
+    editor.lineActivated.connect(lambda line, data: print(f"Activated: {line}"))
+    
+    # Show and run
+    editor.show()
+    app.exec_()
+    ```
+    
+    Architecture:
+    =============
+    The widget follows SOLID principles with clear separation of concerns:
+    - Models: LineData, SearchModel (data structures)
+    - Services: DecorationService, SearchService, LanguageService (business logic)
+    - Controllers: EditorActions (keyboard shortcuts and actions)
+    - UI: SearchPopup, GotoLineOverlay, LineNumberArea (presentation)
+    
+    All services are injected and can be accessed/replaced for customization.
     """
     
-    # Signals
-    lineActivated = pyqtSignal(int, object)  # line_number, line_data
-    cursorMoved = pyqtSignal(int)  # line_number
+    # Signals with comprehensive documentation above
+    lineActivated = pyqtSignal(int, object)  # line_number (0-based), line_data (payload or None)
+    cursorMoved = pyqtSignal(int)  # line_number (0-based)
     
     def __init__(self, parent: Optional[QWidget] = None):
         """

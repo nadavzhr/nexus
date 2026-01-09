@@ -14,12 +14,60 @@ from PyQt5.QtWidgets import (
 
 class SearchPopup(QWidget):
     """
-    VS Code-style search popup widget.
+    VS Code-style search popup widget - self-contained and reusable.
     
-    Appears in the top-right corner of the editor with search controls.
+    A floating search/replace widget that can be embedded in any parent widget.
+    Provides a rich API through signals for loose coupling with the parent.
+    
+    The widget is fully self-contained and manages its own:
+    - Search pattern and options (case-sensitive, regex, whole word)
+    - Replace mode toggle and replacement text
+    - Match count display
+    - Keyboard navigation (Tab, Shift+Tab, Enter, Escape)
+    - Alt+C/R/W shortcuts for toggling options
+    
+    Signals:
+        searchRequested(str, bool, bool, bool): Emitted when search criteria change.
+            Args: pattern (str), case_sensitive (bool), use_regex (bool), whole_word (bool)
+        
+        nextRequested(): Emitted when user wants to navigate to next match.
+            Triggered by: Down arrow button, Enter key
+        
+        previousRequested(): Emitted when user wants to navigate to previous match.
+            Triggered by: Up arrow button, Shift+Enter
+        
+        closeRequested(): Emitted when user wants to close the popup.
+            Triggered by: Close button (×), Escape key
+        
+        replaceRequested(str): Emitted when user wants to replace current match.
+            Args: replacement_text (str)
+            Triggered by: Replace button, Enter in replace field
+        
+        replaceAllRequested(str): Emitted when user wants to replace all matches.
+            Args: replacement_text (str)
+            Triggered by: Replace All button, Ctrl+Alt+Enter
+    
+    Public API Methods:
+        - show_popup() / hide_popup(): Control visibility
+        - set_pattern(str) / get_pattern() -> str: Get/set search pattern
+        - set_case_sensitive(bool) / get_case_sensitive() -> bool: Case sensitivity
+        - set_use_regex(bool) / get_use_regex() -> bool: Regex mode
+        - set_whole_word(bool) / get_whole_word() -> bool: Whole word matching
+        - set_replace_text(str) / get_replace_text() -> str: Replacement text
+        - is_replace_mode() -> bool: Check if replace UI is visible
+        - update_match_count(int, int): Update match display (current, total)
+    
+    Usage Example:
+        ```python
+        popup = SearchPopup(parent_widget)
+        popup.searchRequested.connect(lambda p, c, r, w: print(f"Search: {p}"))
+        popup.nextRequested.connect(lambda: print("Next"))
+        popup.closeRequested.connect(popup.hide_popup)
+        popup.show_popup()
+        ```
     """
     
-    # Signals
+    # Signals with explicit parameter documentation
     searchRequested = pyqtSignal(str, bool, bool, bool)  # pattern, case, regex, whole_word
     nextRequested = pyqtSignal()
     previousRequested = pyqtSignal()
