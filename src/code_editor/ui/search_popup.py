@@ -5,7 +5,7 @@ This module provides the search popup UI component.
 """
 
 from typing import Optional
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QEvent
 from PyQt5.QtWidgets import (
     QWidget, QHBoxLayout, QLineEdit, QPushButton, 
     QCheckBox, QLabel, QVBoxLayout
@@ -39,9 +39,12 @@ class SearchPopup(QWidget):
         self._last_pattern = ""
         self._replace_mode = False  # Track if replace UI is shown
         
-        # Make it a floating widget
+        # Make it a floating widget that captures keyboard input
         self.setWindowFlags(Qt.Widget)
         self.setAutoFillBackground(True)
+        
+        # Set focus policy to capture keyboard events including Tab
+        self.setFocusPolicy(Qt.StrongFocus)
     
     def _setup_ui(self) -> None:
         """Setup the UI components."""
@@ -376,10 +379,16 @@ class SearchPopup(QWidget):
         return super().eventFilter(obj, event)
     
     def keyPressEvent(self, event) -> None:
-        """Handle key press events."""
+        """Handle key press events for the popup widget."""
         # Don't process events if popup is hidden
         if not self.isVisible():
             super().keyPressEvent(event)
+            return
+        
+        # Allow Tab and Shift+Tab for navigation within the widget
+        # Do NOT consume these - let Qt handle the default tab navigation
+        if event.key() == Qt.Key_Tab or event.key() == Qt.Key_Backtab:
+            event.ignore()  # Let Qt handle tab navigation
             return
         
         # Enter - Next match
@@ -396,6 +405,12 @@ class SearchPopup(QWidget):
         # Escape - Close
         elif event.key() == Qt.Key_Escape:
             self.closeRequested.emit()
+            event.accept()
+            return
+        
+        # Ctrl+H - Toggle replace mode
+        elif event.key() == Qt.Key_H and event.modifiers() == Qt.ControlModifier:
+            self._toggle_replace_mode()
             event.accept()
             return
         
@@ -417,5 +432,28 @@ class SearchPopup(QWidget):
             event.accept()
             return
         
-        # Default behavior
+        # Default behavior for other keys
         super().keyPressEvent(event)
+    
+    def event(self, event) -> bool:
+        """Override event to intercept Tab navigation before it propagates."""
+        # Intercept Tab and Shift+Tab to keep navigation within the popup
+        if event.type() == QEvent.KeyPress:
+            key_event = event
+            if key_event.key() == Qt.Key_Tab or key_event.key() == Qt.Key_Backtab:
+                # Handle tab navigation within this widget
+                # Don't let it propagate to parent editor
+                if key_event.key() == Qt.Key_Tab:
+                    self.focusNextChild()
+                else:  # Shift+Tab (Backtab)
+                    self.focusPreviousChild()
+                return True  # Event handled, don't propagate
+        
+        # For all other events, use default handling
+        return super().event(event)
+    
+    def focusInEvent(self, event) -> None:
+        """Handle focus in event to ensure proper keyboard event handling."""
+        super().focusInEvent(event)
+        # Ensure the popup widget itself can receive keyboard events
+        self.setFocus(Qt.OtherFocusReason)
