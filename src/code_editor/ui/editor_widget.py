@@ -192,6 +192,10 @@ class CodeEditor(QPlainTextEdit):
         # Search - Ctrl+F
         self._shortcut_search = QShortcut(QKeySequence("Ctrl+F"), self)
         self._shortcut_search.activated.connect(self.show_search_popup)
+        
+        # Find and Replace - Ctrl+H
+        self._shortcut_replace = QShortcut(QKeySequence("Ctrl+H"), self)
+        self._shortcut_replace.activated.connect(self.show_replace_popup)
     
     # ==================== Line Number Area Methods ====================
     
@@ -694,6 +698,19 @@ class CodeEditor(QPlainTextEdit):
 
         # Show existing instance (don't recreate)
         self._search_popup.show_popup()
+    
+    def show_replace_popup(self) -> None:
+        """Show the search popup with replace mode enabled (Ctrl+H)."""
+        # First show the search popup (creates it if needed)
+        self.show_search_popup()
+        
+        # Enable replace mode if not already enabled
+        if not self._search_popup.is_replace_mode():
+            self._search_popup._toggle_replace_mode()
+        
+        # Set focus to replace input field
+        self._search_popup.replace_input.setFocus()
+        self._search_popup.replace_input.selectAll()
     
     def hide_search_popup(self) -> None:
         """Hide the search popup if it exists."""
