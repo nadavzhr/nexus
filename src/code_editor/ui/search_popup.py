@@ -331,10 +331,11 @@ class SearchPopup(QWidget):
         self.hide()
     
     def eventFilter(self, obj, event) -> bool:
-        """Filter events for child widgets to handle shortcuts.
+        """Filter events for child widgets to handle popup-specific shortcuts.
         
-        This is necessary because keyboard shortcuts need to work even when
-        the search_input or replace_input has focus.
+        This handles shortcuts that are specific to the search popup and should
+        work when input fields have focus. Global shortcuts like Ctrl+H are
+        handled by the parent editor widget's shortcut system.
         """
         # Don't process events if popup is hidden
         if not self.isVisible():
@@ -345,12 +346,7 @@ class SearchPopup(QWidget):
             if event.key() == Qt.Key_Tab or event.key() == Qt.Key_Backtab:
                 return False  # Let the default Tab handling work
             
-            # Handle Ctrl+H - Toggle replace mode
-            if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_H:
-                self._toggle_replace_mode()
-                return True
-            
-            # Handle Alt+C, Alt+R, Alt+W shortcuts
+            # Handle Alt+C, Alt+R, Alt+W shortcuts (popup-specific)
             if event.modifiers() == Qt.AltModifier:
                 if event.key() == Qt.Key_C:
                     self.case_checkbox.setChecked(not self.case_checkbox.isChecked())
@@ -388,7 +384,12 @@ class SearchPopup(QWidget):
         return super().eventFilter(obj, event)
     
     def keyPressEvent(self, event) -> None:
-        """Handle key press events for the popup widget."""
+        """Handle key press events for the popup widget.
+        
+        This handles popup-specific keys like Escape, Enter, and Alt shortcuts.
+        Global shortcuts like Ctrl+H are handled by the parent editor's
+        shortcut system with proper focus context.
+        """
         # Don't process events if popup is hidden
         if not self.isVisible():
             super().keyPressEvent(event)
@@ -414,12 +415,6 @@ class SearchPopup(QWidget):
         # Escape - Close
         elif event.key() == Qt.Key_Escape:
             self.closeRequested.emit()
-            event.accept()
-            return
-        
-        # Ctrl+H - Toggle replace mode
-        elif event.key() == Qt.Key_H and event.modifiers() == Qt.ControlModifier:
-            self._toggle_replace_mode()
             event.accept()
             return
         

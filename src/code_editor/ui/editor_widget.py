@@ -168,33 +168,48 @@ class CodeEditor(QPlainTextEdit):
         self.cursorPositionChanged.connect(self._on_cursor_position_changed)
     
     def _setup_shortcuts(self) -> None:
-        """Setup keyboard shortcuts."""
-        # Comment/Uncomment - Ctrl+/
+        """Setup keyboard shortcuts with proper focus context.
+        
+        All editor-specific shortcuts (Ctrl+D, Ctrl+/, etc.) only activate
+        when the editor itself has focus, not when child widgets like the
+        search popup have focus. This ensures proper separation of concerns
+        and prevents shortcuts from being handled by inactive widgets.
+        """
+        # Comment/Uncomment - Ctrl+/ (only when editor has focus)
         self._shortcut_comment = QShortcut(QKeySequence("Ctrl+/"), self)
+        self._shortcut_comment.setContext(Qt.WidgetShortcut)
         self._shortcut_comment.activated.connect(self.toggle_comment)
         
-        # Duplicate line - Ctrl+D
+        # Duplicate line - Ctrl+D (only when editor has focus)
         self._shortcut_duplicate = QShortcut(QKeySequence("Ctrl+D"), self)
+        self._shortcut_duplicate.setContext(Qt.WidgetShortcut)
         self._shortcut_duplicate.activated.connect(self.duplicate_line)
         
-        # Move line up - Alt+Up
+        # Move line up - Alt+Up (only when editor has focus)
         self._shortcut_move_up = QShortcut(QKeySequence("Alt+Up"), self)
+        self._shortcut_move_up.setContext(Qt.WidgetShortcut)
         self._shortcut_move_up.activated.connect(self.move_line_up)
         
-        # Move line down - Alt+Down
+        # Move line down - Alt+Down (only when editor has focus)
         self._shortcut_move_down = QShortcut(QKeySequence("Alt+Down"), self)
+        self._shortcut_move_down.setContext(Qt.WidgetShortcut)
         self._shortcut_move_down.activated.connect(self.move_line_down)
         
-        # Go to line - Ctrl+G
+        # Go to line - Ctrl+G (only when editor has focus)
         self._shortcut_goto = QShortcut(QKeySequence("Ctrl+G"), self)
+        self._shortcut_goto.setContext(Qt.WidgetShortcut)
         self._shortcut_goto.activated.connect(self.go_to_line)
         
-        # Search - Ctrl+F
+        # Search - Ctrl+F (widget with children - includes editor and popup)
+        # This allows opening search from both editor and when popup is already shown
         self._shortcut_search = QShortcut(QKeySequence("Ctrl+F"), self)
+        self._shortcut_search.setContext(Qt.WidgetWithChildrenShortcut)
         self._shortcut_search.activated.connect(self.show_search_popup)
         
-        # Find and Replace - Ctrl+H
+        # Find and Replace - Ctrl+H (widget with children)
+        # This allows opening/toggling replace from both editor and popup
         self._shortcut_replace = QShortcut(QKeySequence("Ctrl+H"), self)
+        self._shortcut_replace.setContext(Qt.WidgetWithChildrenShortcut)
         self._shortcut_replace.activated.connect(self.show_replace_popup)
     
     # ==================== Line Number Area Methods ====================
