@@ -43,8 +43,11 @@ class SearchPopup(QWidget):
         self.setWindowFlags(Qt.Widget)
         self.setAutoFillBackground(True)
         
-        # Set focus policy to capture keyboard events including Tab
-        self.setFocusPolicy(Qt.StrongFocus)
+        # Set focus policy - NoFocus for the container, let children handle it
+        self.setFocusPolicy(Qt.NoFocus)
+        
+        # Track all focusable widgets for manual tab navigation
+        self._focusable_widgets = []
     
     def _setup_ui(self) -> None:
         """Setup the UI components."""
@@ -164,18 +167,25 @@ class SearchPopup(QWidget):
         
         layout.addLayout(options_row)
         
-        # Set explicit tab order for keyboard navigation
-        self.setTabOrder(self.toggle_replace_btn, self.search_input)
-        self.setTabOrder(self.search_input, self.prev_btn)
-        self.setTabOrder(self.prev_btn, self.next_btn)
-        self.setTabOrder(self.next_btn, close_btn)
-        self.setTabOrder(close_btn, self.replace_input)
-        self.setTabOrder(self.replace_input, self.replace_btn)
-        self.setTabOrder(self.replace_btn, self.replace_all_btn)
-        self.setTabOrder(self.replace_all_btn, self.case_checkbox)
-        self.setTabOrder(self.case_checkbox, self.regex_checkbox)
-        self.setTabOrder(self.regex_checkbox, self.whole_word_checkbox)
-        self.setTabOrder(self.whole_word_checkbox, self.toggle_replace_btn)  # Wrap around
+        # Build list of focusable widgets in tab order
+        # This list defines the keyboard navigation order
+        self._focusable_widgets = [
+            self.toggle_replace_btn,
+            self.search_input,
+            self.prev_btn,
+            self.next_btn,
+            close_btn,
+            self.replace_input,
+            self.replace_btn,
+            self.replace_all_btn,
+            self.case_checkbox,
+            self.regex_checkbox,
+            self.whole_word_checkbox,
+        ]
+        
+        # Install event filter on all focusable widgets to intercept Tab
+        for widget in self._focusable_widgets:
+            widget.installEventFilter(self)
         
         # Style
         self.setStyleSheet("""
@@ -331,21 +341,27 @@ class SearchPopup(QWidget):
         self.hide()
     
     def eventFilter(self, obj, event) -> bool:
-        """Filter events for child widgets to handle popup-specific shortcuts.
+        """Filter events for child widgets to handle popup-specific shortcuts and Tab navigation.
         
-        This handles shortcuts that are specific to the search popup and should
-        work when input fields have focus. Global shortcuts like Ctrl+H are
-        handled by the parent editor widget's shortcut system.
+        This handles:
+        1. Tab/Shift+Tab navigation within the popup (custom navigation chain)
+        2. Shortcuts that are specific to the search popup
+        Global shortcuts like Ctrl+H are handled by the parent editor widget's shortcut system.
         """
         # Don't process events if popup is hidden
         if not self.isVisible():
             return super().eventFilter(obj, event)
         
-        if obj in (self.search_input, self.replace_input) and event.type() == event.KeyPress:
-            # Allow Tab and Shift+Tab for navigation within the popup
-            if event.key() == Qt.Key_Tab or event.key() == Qt.Key_Backtab:
-                return False  # Let the default Tab handling work
-            
+        if event.type() == QEvent.KeyPress:
+            # Handle Tab and Shift+Tab for custom navigation within popup
+            if event.key() == Qt.Key_Tab:
+                self._focus_next_widget(obj)
+                return True  # Event handled, don't propagate
+            elif event.key() == Qt.Key_Backtab:
+                self._focus_previous_widget(obj)
+                return True  # Event handled, don't propagate
+        
+        if obj in (self.search_input, self.replace_input) and event.type() == QEvent.KeyPress:
             # Handle Alt+C, Alt+R, Alt+W shortcuts (popup-specific)
             if event.modifiers() == Qt.AltModifier:
                 if event.key() == Qt.Key_C:
@@ -383,75 +399,36 @@ class SearchPopup(QWidget):
         
         return super().eventFilter(obj, event)
     
-    def keyPressEvent(self, event) -> None:
-        """Handle key press events for the popup widget.
+    def _focus_next_widget(self, current_widget) -> None:
+        """Move focus to the next widget in the focus chain."""
+        # Get list of currently visible focusable widgets
+        visible_widgets = [w for w in self._focusable_widgets if w.isVisible()]
         
-        This handles popup-specific keys like Escape, Enter, and Alt shortcuts.
-        Global shortcuts like Ctrl+H are handled by the parent editor's
-        shortcut system with proper focus context.
-        """
-        # Don't process events if popup is hidden
-        if not self.isVisible():
-            super().keyPressEvent(event)
+        if not visible_widgets:
             return
         
-        # Allow Tab and Shift+Tab for navigation within the widget
-        # Do NOT consume these - let Qt handle the default tab navigation
-        if event.key() == Qt.Key_Tab or event.key() == Qt.Key_Backtab:
-            event.ignore()  # Let Qt handle tab navigation
-            return
-        
-        # Enter - Next match
-        if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
-            if event.modifiers() == Qt.ShiftModifier:
-                # Shift+Enter - Previous match
-                self.previousRequested.emit()
-            else:
-                # Enter - Next match
-                self.nextRequested.emit()
-            event.accept()
-            return
-        
-        # Escape - Close
-        elif event.key() == Qt.Key_Escape:
-            self.closeRequested.emit()
-            event.accept()
-            return
-        
-        # Alt+C - Toggle case sensitivity
-        elif event.key() == Qt.Key_C and event.modifiers() == Qt.AltModifier:
-            self.case_checkbox.setChecked(not self.case_checkbox.isChecked())
-            event.accept()
-            return
-        
-        # Alt+R - Toggle regex
-        elif event.key() == Qt.Key_R and event.modifiers() == Qt.AltModifier:
-            self.regex_checkbox.setChecked(not self.regex_checkbox.isChecked())
-            event.accept()
-            return
-        
-        # Alt+W - Toggle whole word
-        elif event.key() == Qt.Key_W and event.modifiers() == Qt.AltModifier:
-            self.whole_word_checkbox.setChecked(not self.whole_word_checkbox.isChecked())
-            event.accept()
-            return
-        
-        # Default behavior for other keys
-        super().keyPressEvent(event)
+        try:
+            current_index = visible_widgets.index(current_widget)
+            # Move to next widget (wrap around to first if at end)
+            next_index = (current_index + 1) % len(visible_widgets)
+            visible_widgets[next_index].setFocus(Qt.TabFocusReason)
+        except ValueError:
+            # Current widget not in list, focus first visible widget
+            visible_widgets[0].setFocus(Qt.TabFocusReason)
     
-    def event(self, event) -> bool:
-        """Override event to intercept Tab navigation before it propagates."""
-        # Intercept Tab and Shift+Tab to keep navigation within the popup
-        if event.type() == QEvent.KeyPress:
-            key_event = event
-            if key_event.key() == Qt.Key_Tab:
-                # Tab - move to next widget
-                self.focusNextChild()
-                return True  # Event handled, don't propagate
-            elif key_event.key() == Qt.Key_Backtab:
-                # Shift+Tab - move to previous widget
-                self.focusPreviousChild()
-                return True  # Event handled, don't propagate
+    def _focus_previous_widget(self, current_widget) -> None:
+        """Move focus to the previous widget in the focus chain."""
+        # Get list of currently visible focusable widgets
+        visible_widgets = [w for w in self._focusable_widgets if w.isVisible()]
         
-        # For all other events, use default handling
-        return super().event(event)
+        if not visible_widgets:
+            return
+        
+        try:
+            current_index = visible_widgets.index(current_widget)
+            # Move to previous widget (wrap around to last if at first)
+            prev_index = (current_index - 1) % len(visible_widgets)
+            visible_widgets[prev_index].setFocus(Qt.BacktabFocusReason)
+        except ValueError:
+            # Current widget not in list, focus last visible widget
+            visible_widgets[-1].setFocus(Qt.BacktabFocusReason)
