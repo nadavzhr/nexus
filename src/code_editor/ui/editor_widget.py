@@ -16,10 +16,11 @@ from PyQt5.QtWidgets import QPlainTextEdit, QWidget, QTextEdit, QShortcut
 # Import from new modular structure
 from .line_number_area import LineNumberArea
 from .goto_line_overlay import GotoLineOverlay
-from .search_popup import SearchService, SearchPopup
+from .search_popup import SearchPopup
 from ..highlighting.highlighter import PygmentsHighlighter
 from ..highlighting.theme import ThemeManager, Theme
 from ..services.decoration_service import DecorationService, DecorationLayer
+from ..services.search_service import SearchService
 from ..controllers.shortcut_controller import EditorActions
 
 # Keep backward compatibility imports from old locations
@@ -167,30 +168,49 @@ class CodeEditor(QPlainTextEdit):
         self.cursorPositionChanged.connect(self._on_cursor_position_changed)
     
     def _setup_shortcuts(self) -> None:
-        """Setup keyboard shortcuts."""
-        # Comment/Uncomment - Ctrl+/
+        """Setup keyboard shortcuts with proper focus context.
+        
+        All editor-specific shortcuts (Ctrl+D, Ctrl+/, etc.) only activate
+        when the editor itself has focus, not when child widgets like the
+        search popup have focus. This ensures proper separation of concerns
+        and prevents shortcuts from being handled by inactive widgets.
+        """
+        # Comment/Uncomment - Ctrl+/ (only when editor has focus)
         self._shortcut_comment = QShortcut(QKeySequence("Ctrl+/"), self)
+        self._shortcut_comment.setContext(Qt.WidgetShortcut)
         self._shortcut_comment.activated.connect(self.toggle_comment)
         
-        # Duplicate line - Ctrl+D
+        # Duplicate line - Ctrl+D (only when editor has focus)
         self._shortcut_duplicate = QShortcut(QKeySequence("Ctrl+D"), self)
+        self._shortcut_duplicate.setContext(Qt.WidgetShortcut)
         self._shortcut_duplicate.activated.connect(self.duplicate_line)
         
-        # Move line up - Alt+Up
+        # Move line up - Alt+Up (only when editor has focus)
         self._shortcut_move_up = QShortcut(QKeySequence("Alt+Up"), self)
+        self._shortcut_move_up.setContext(Qt.WidgetShortcut)
         self._shortcut_move_up.activated.connect(self.move_line_up)
         
-        # Move line down - Alt+Down
+        # Move line down - Alt+Down (only when editor has focus)
         self._shortcut_move_down = QShortcut(QKeySequence("Alt+Down"), self)
+        self._shortcut_move_down.setContext(Qt.WidgetShortcut)
         self._shortcut_move_down.activated.connect(self.move_line_down)
         
-        # Go to line - Ctrl+G
+        # Go to line - Ctrl+G (only when editor has focus)
         self._shortcut_goto = QShortcut(QKeySequence("Ctrl+G"), self)
+        self._shortcut_goto.setContext(Qt.WidgetShortcut)
         self._shortcut_goto.activated.connect(self.go_to_line)
         
-        # Search - Ctrl+F
+        # Search - Ctrl+F (widget with children - includes editor and popup)
+        # This allows opening search from both editor and when popup is already shown
         self._shortcut_search = QShortcut(QKeySequence("Ctrl+F"), self)
+        self._shortcut_search.setContext(Qt.WidgetWithChildrenShortcut)
         self._shortcut_search.activated.connect(self.show_search_popup)
+        
+        # Find and Replace - Ctrl+H (widget with children)
+        # This allows opening/toggling replace from both editor and popup
+        self._shortcut_replace = QShortcut(QKeySequence("Ctrl+H"), self)
+        self._shortcut_replace.setContext(Qt.WidgetWithChildrenShortcut)
+        self._shortcut_replace.activated.connect(self.show_replace_popup)
     
     # ==================== Line Number Area Methods ====================
     
@@ -523,6 +543,14 @@ class CodeEditor(QPlainTextEdit):
                 self.paste_line()
                 return
         
+        elif event.key() == Qt.Key_Escape:
+            if self._search_popup and self._search_popup.isVisible():
+                self._search_popup.hide_popup()
+                return
+            if self._goto_line_overlay and self._goto_line_overlay.isVisible():
+                self._goto_line_overlay.hide_overlay()
+                return
+
         # Default behavior for all other keys
         super().keyPressEvent(event)
     
@@ -640,6 +668,9 @@ class CodeEditor(QPlainTextEdit):
     
     def show_search_popup(self) -> None:
         """Show the search popup widget (singleton - reuses existing instance)."""
+        # Hide goto line overlay if visible
+        if self._goto_line_overlay and self._goto_line_overlay.isVisible():
+            self._goto_line_overlay.hide_overlay()
         # Create once, reuse forever (singleton pattern)
         if not self._search_popup:
             self._search_popup = SearchPopup(self)
@@ -647,44 +678,129 @@ class CodeEditor(QPlainTextEdit):
             self._search_popup.nextRequested.connect(self._on_next_match)
             self._search_popup.previousRequested.connect(self._on_previous_match)
             self._search_popup.closeRequested.connect(self._on_search_closed)
+            self._search_popup.replaceRequested.connect(self._on_replace_current)
+            self._search_popup.replaceAllRequested.connect(self._on_replace_all)
         
-        # Position popup at top-right corner
+        # Position popup at top-right corner (in global coordinates since it's a tool window)
         popup_width = self._search_popup.sizeHint().width()
         popup_height = self._search_popup.sizeHint().height()
-        x = self.width() - popup_width - 20
-        y = 10
-        self._search_popup.setGeometry(x, y, popup_width, popup_height)
+        
+        # Convert editor's top-right position to global coordinates
+        editor_global_pos = self.mapToGlobal(self.rect().topRight())
+        x = editor_global_pos.x() - popup_width - 20
+        y = editor_global_pos.y() + 10
+        self._search_popup.move(x, y)
+        self._search_popup.resize(popup_width, popup_height)
         
         # Restore last search
         last_pattern = self._search_service.get_last_pattern()
         if last_pattern:
             self._search_popup.set_pattern(last_pattern)
-            # Highlight based on last search
-            self._on_search_requested(
-                last_pattern,
-                False,
-                False,
-                False
-            )
+            # Restore checkbox states from last search
+            self._search_popup.set_case_sensitive(self._search_service.get_last_case_sensitive())
+            self._search_popup.set_use_regex(self._search_service.get_last_use_regex())
+            self._search_popup.set_whole_word(self._search_service.get_last_whole_word())
+            
+            # Check if we need to re-search or just restore highlights
+            if self._search_service.has_matches():
+                # We already have matches - just restore highlights at current position
+                self._restore_search_highlights()
+            else:
+                # No matches yet - perform initial search
+                self._on_search_requested(
+                    last_pattern,
+                    self._search_service.get_last_case_sensitive(),
+                    self._search_service.get_last_use_regex(),
+                    self._search_service.get_last_whole_word()
+                )
 
 
         # Show existing instance (don't recreate)
         self._search_popup.show_popup()
     
-    def _on_search_requested(self, pattern: str, case_sensitive: bool,
-                             use_regex: bool, whole_word: bool) -> None:
-        """Handle search request from popup (using DecorationService)."""
-        # Clear previous highlights first (always clear when pattern changes)
+    def show_replace_popup(self) -> None:
+        """Show the search popup with replace mode enabled (Ctrl+H)."""
+        # First show the search popup (creates it if needed)
+        self.show_search_popup()
+        
+        # Enable replace mode if not already enabled
+        if not self._search_popup.is_replace_mode():
+            self._search_popup._toggle_replace_mode()
+        
+        # Set focus to replace input field
+        self._search_popup.replace_input.setFocus()
+        self._search_popup.replace_input.selectAll()
+    
+    def hide_search_popup(self) -> None:
+        """Hide the search popup if it exists."""
+        if self._search_popup:
+            self._search_popup.hide_popup()
+
+    def _restore_search_highlights(self) -> None:
+        """Restore search highlights from existing matches without re-searching."""
+        # Clear previous highlights first
         self._decoration_service.clear_layer(DecorationLayer.SEARCH_MATCHES)
         self._decoration_service.clear_layer(DecorationLayer.CURRENT_MATCH)
         
-        # If pattern is empty, clear search service and update UI
+        matches = self._search_service.get_matches()
+        if not matches:
+            self._decoration_service.apply()
+            return
+        
+        # Highlight all matches
+        theme = self._theme_manager.get_current_theme()
+        for match in matches:
+            self._decoration_service.add_decoration(
+                DecorationLayer.SEARCH_MATCHES,
+                match.cursor,
+                theme.search_match
+            )
+        
+        # Highlight current match distinctly (top layer)
+        current_match = self._search_service.get_current_match()
+        if current_match:
+            self._decoration_service.add_decoration(
+                DecorationLayer.CURRENT_MATCH,
+                current_match.cursor,
+                theme.current_match
+            )
+            
+            # Move editor to current match
+            self.setTextCursor(current_match.cursor)
+            self.centerCursor()
+        
+        # Apply all decorations atomically
+        self._decoration_service.apply()
+        
+        # Update match count in popup
+        if self._search_popup:
+            current_idx = self._search_service.get_current_index() + 1  # Convert to 1-based
+            self._search_popup.update_match_count(current_idx, len(matches))
+    
+    def _on_search_requested(self, pattern: str, case_sensitive: bool,
+                             use_regex: bool, whole_word: bool) -> None:
+        """Handle search request from popup (using DecorationService)."""
+        # If pattern is empty, clear highlights and save empty pattern as last search
         if not pattern:
-            self._search_service.clear()  # Clear the matches from the service
+            # Clear previous highlights
+            self._decoration_service.clear_layer(DecorationLayer.SEARCH_MATCHES)
+            self._decoration_service.clear_layer(DecorationLayer.CURRENT_MATCH)
+            # Save empty pattern as the last search (empty IS a valid pattern)
+            self._search_service.search("", case_sensitive, use_regex, whole_word)
             self._decoration_service.apply()
             if self._search_popup:
                 self._search_popup.update_match_count(0, 0)
             return
+        
+        # Check if we need to re-search or just restore existing highlights
+        if not self._search_service.needs_research(pattern, case_sensitive, use_regex, whole_word):
+            # Same search criteria and we have matches - just restore highlights
+            self._restore_search_highlights()
+            return
+        
+        # Clear previous highlights (we're doing a new search)
+        self._decoration_service.clear_layer(DecorationLayer.SEARCH_MATCHES)
+        self._decoration_service.clear_layer(DecorationLayer.CURRENT_MATCH)
         
         # Perform search
         count = self._search_service.search(pattern, case_sensitive, use_regex, whole_word)
@@ -778,6 +894,80 @@ class CodeEditor(QPlainTextEdit):
         # Return focus to the editor
         self.setFocus()
     
+    def _on_replace_current(self, replacement: str) -> None:
+        """Handle replace current match request."""
+        if self.isReadOnly():
+            return
+        
+        # Replace the current match
+        success = self._search_service.replace_current(replacement)
+        
+        if success:
+            # Re-perform search to update matches (positions changed after replacement)
+            pattern = self._search_service.get_last_pattern()
+            case_sensitive = self._search_service.get_last_case_sensitive()
+            use_regex = self._search_service.get_last_use_regex()
+            whole_word = self._search_service.get_last_whole_word()
+            
+            # Re-search to get updated matches
+            count = self._search_service.search(pattern, case_sensitive, use_regex, whole_word)
+            
+            # Update highlights
+            self._decoration_service.clear_layer(DecorationLayer.SEARCH_MATCHES)
+            self._decoration_service.clear_layer(DecorationLayer.CURRENT_MATCH)
+            
+            if count > 0:
+                theme = self._theme_manager.get_current_theme()
+                for match in self._search_service.get_matches():
+                    self._decoration_service.add_decoration(
+                        DecorationLayer.SEARCH_MATCHES,
+                        match.cursor,
+                        theme.search_match
+                    )
+                
+                # Highlight current match
+                current_match = self._search_service.get_current_match()
+                if current_match:
+                    self._decoration_service.add_decoration(
+                        DecorationLayer.CURRENT_MATCH,
+                        current_match.cursor,
+                        theme.current_match
+                    )
+                    self.setTextCursor(current_match.cursor)
+                    self.centerCursor()
+                
+                # Update popup
+                if self._search_popup:
+                    current_idx = self._search_service.get_current_index() + 1
+                    self._search_popup.update_match_count(current_idx, count)
+            else:
+                # No more matches
+                if self._search_popup:
+                    self._search_popup.update_match_count(0, 0)
+            
+            self._decoration_service.apply()
+    
+    def _on_replace_all(self, replacement: str) -> None:
+        """Handle replace all matches request."""
+        if self.isReadOnly():
+            return
+        
+        # Replace all matches
+        count = self._search_service.replace_all(replacement)
+        
+        # Clear all highlights
+        self._decoration_service.clear_layer(DecorationLayer.SEARCH_MATCHES)
+        self._decoration_service.clear_layer(DecorationLayer.CURRENT_MATCH)
+        self._decoration_service.apply()
+        
+        # Update popup to show no matches
+        if self._search_popup:
+            self._search_popup.update_match_count(0, 0)
+        
+        # Optionally show a status message (could be implemented later)
+        # For now, just focus back to editor
+        self.setFocus()
+    
     # ==================== Keyboard Shortcut Actions (Public API) ====================
     
     def toggle_comment(self) -> None:
@@ -853,6 +1043,9 @@ class CodeEditor(QPlainTextEdit):
     
     def go_to_line(self) -> None:
         """Show overlay and jump to a specific line."""
+        # If search popup is visible, hide it first
+        if self._search_popup and self._search_popup.isVisible():
+            self._search_popup.hide_popup()
         # Create overlay if it doesn't exist
         if self._goto_line_overlay is None:
             self._goto_line_overlay = GotoLineOverlay(self)

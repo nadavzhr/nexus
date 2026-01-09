@@ -1,180 +1,15 @@
 """
 Search functionality for the code editor.
 
-This module provides search service and UI components.
+This module provides the search popup UI component.
 """
 
-from typing import List, Optional
-from PyQt5.QtCore import Qt, QRegExp, pyqtSignal
-from PyQt5.QtGui import QTextCursor, QTextDocument, QColor
+from typing import Optional
+from PyQt5.QtCore import Qt, pyqtSignal, QEvent
 from PyQt5.QtWidgets import (
-    QWidget, QHBoxLayout, QLineEdit, QPushButton, 
-    QCheckBox, QLabel, QVBoxLayout
+    QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, 
+    QCheckBox, QLabel, QSpacerItem, QSizePolicy
 )
-
-
-class SearchMatch:
-    """Represents a single search match."""
-    
-    def __init__(self, cursor: QTextCursor):
-        """
-        Initialize a search match.
-        
-        Args:
-            cursor: QTextCursor positioned at the match
-        """
-        self.cursor = cursor
-        self.start = cursor.selectionStart()
-        self.end = cursor.selectionEnd()
-        self.text = cursor.selectedText()
-
-
-class SearchService:
-    """
-    Service layer for search functionality.
-    
-    Handles the logic of finding matches in a document without
-    concerning itself with UI.
-    """
-    
-    def __init__(self, document: QTextDocument):
-        """
-        Initialize the search service.
-        
-        Args:
-            document: QTextDocument to search in
-        """
-        self.document = document
-        self._matches: List[SearchMatch] = []
-        self._current_index: int = -1
-        self._last_pattern: str = ""
-        self._case_sensitive: bool = False
-        self._use_regex: bool = False
-        self._whole_word: bool = False
-    
-    def search(self, pattern: str, case_sensitive: bool = False,
-               use_regex: bool = False, whole_word: bool = False) -> int:
-        """
-        Search for a pattern in the document.
-        
-        Args:
-            pattern: Search pattern
-            case_sensitive: If True, search is case-sensitive
-            use_regex: If True, treat pattern as regex
-            whole_word: If True, match whole words only
-            
-        Returns:
-            Number of matches found
-        """
-        self._matches.clear()
-        self._current_index = -1
-        self._last_pattern = pattern
-        self._case_sensitive = case_sensitive
-        self._use_regex = use_regex
-        self._whole_word = whole_word
-        
-        if not pattern:
-            return 0
-        
-        # Build search flags
-        flags = QTextDocument.FindFlags()
-        if case_sensitive:
-            flags |= QTextDocument.FindCaseSensitively
-        if whole_word:
-            flags |= QTextDocument.FindWholeWords
-        
-        # Find all matches
-        cursor = QTextCursor(self.document)
-        last_position = -1
-        max_iterations = 10000  # Safety limit to prevent infinite loops
-        iteration_count = 0
-        
-        if use_regex:
-            # Use regex search
-            regex = QRegExp(pattern)
-            if not case_sensitive:
-                regex.setCaseSensitivity(Qt.CaseInsensitive)
-            
-            cursor = self.document.find(regex, cursor, flags)
-            while not cursor.isNull() and iteration_count < max_iterations:
-                # Prevent infinite loop with zero-width matches
-                current_pos = cursor.position()
-                if current_pos == last_position:
-                    # Move forward to avoid infinite loop
-                    next_pos = current_pos + 1
-                    # Check if we've reached the end of the document
-                    if next_pos >= self.document.characterCount():
-                        break
-                    cursor.setPosition(next_pos)
-                    cursor = self.document.find(regex, cursor, flags)
-                    iteration_count += 1
-                    continue
-                
-                # Validate cursor position is within document
-                if current_pos < 0 or current_pos >= self.document.characterCount():
-                    break
-                
-                match = SearchMatch(cursor)
-                self._matches.append(match)
-                last_position = current_pos
-                cursor = self.document.find(regex, cursor, flags)
-                iteration_count += 1
-        else:
-            # Use plain text search
-            cursor = self.document.find(pattern, cursor, flags)
-            while not cursor.isNull() and iteration_count < max_iterations:
-                # Prevent infinite loop
-                current_pos = cursor.position()
-                if current_pos == last_position:
-                    break
-                
-                # Validate cursor position
-                if current_pos < 0 or current_pos > self.document.characterCount():
-                    break
-                
-                match = SearchMatch(cursor)
-                self._matches.append(match)
-                last_position = current_pos
-                cursor = self.document.find(pattern, cursor, flags)
-                iteration_count += 1
-        
-        if self._matches:
-            self._current_index = 0
-        
-        return len(self._matches)
-    
-    def get_matches(self) -> List[SearchMatch]:
-        """Get all search matches."""
-        return self._matches
-    
-    def get_current_match(self) -> Optional[SearchMatch]:
-        """Get the current match."""
-        if 0 <= self._current_index < len(self._matches):
-            return self._matches[self._current_index]
-        return None
-    
-    def next_match(self) -> Optional[SearchMatch]:
-        """Move to the next match."""
-        if not self._matches:
-            return None
-        self._current_index = (self._current_index + 1) % len(self._matches)
-        return self._matches[self._current_index]
-    
-    def previous_match(self) -> Optional[SearchMatch]:
-        """Move to the previous match."""
-        if not self._matches:
-            return None
-        self._current_index = (self._current_index - 1) % len(self._matches)
-        return self._matches[self._current_index]
-    
-    def get_last_pattern(self) -> str:
-        """Get the last search pattern."""
-        return self._last_pattern
-    
-    def clear(self) -> None:
-        """Clear all search results."""
-        self._matches.clear()
-        self._current_index = -1
 
 
 class SearchPopup(QWidget):
@@ -189,6 +24,8 @@ class SearchPopup(QWidget):
     nextRequested = pyqtSignal()
     previousRequested = pyqtSignal()
     closeRequested = pyqtSignal()
+    replaceRequested = pyqtSignal(str)  # replacement_text
+    replaceAllRequested = pyqtSignal(str)  # replacement_text
     
     def __init__(self, parent: Optional[QWidget] = None):
         """
@@ -200,78 +37,146 @@ class SearchPopup(QWidget):
         super().__init__(parent)
         self._setup_ui()
         self._last_pattern = ""
+        self._replace_mode = False  # Track if replace UI is shown
         
-        # Make it a floating widget
-        self.setWindowFlags(Qt.Widget)
+        # Make it an independent tool window (not a child widget)
+        # This gives it its own focus context, completely isolated from parent
+        # Qt's tab navigation works naturally within the tool window
+        # Removed Qt.WindowStaysOnTopHint - it's annoying and not needed
+        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
         self.setAutoFillBackground(True)
+        
+        # Set focus policy for the popup
+        self.setFocusPolicy(Qt.StrongFocus)
     
     def _setup_ui(self) -> None:
-        """Setup the UI components."""
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
-        layout.setSpacing(5)
+        """Setup the UI components with clean horizontal layout and fixed width."""
+        # Main vertical layout
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(5, 5, 5, 5)
+        main_layout.setSpacing(5)
         
-        # First row: search input and buttons
+        # Row 1: Search controls
         search_row = QHBoxLayout()
+        search_row.setSpacing(5)
         
+        # Toggle replace button
+        self.toggle_replace_btn = QPushButton("▶")
+        self.toggle_replace_btn.setFixedWidth(25)
+        self.toggle_replace_btn.setToolTip("Toggle Replace (Ctrl+H)")
+        self.toggle_replace_btn.clicked.connect(self._toggle_replace_mode)
+        self.toggle_replace_btn.setFocusPolicy(Qt.StrongFocus)
+        search_row.addWidget(self.toggle_replace_btn)
+        
+        # Search input
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Find...")
-        self.search_input.setMinimumWidth(200)
-        # Live search as user types
+        self.search_input.setFixedWidth(300)
+        self.search_input.setFocusPolicy(Qt.StrongFocus)
         self.search_input.textChanged.connect(self._on_search)
-        # Install event filter to handle Alt shortcuts when input has focus
         self.search_input.installEventFilter(self)
         search_row.addWidget(self.search_input)
         
         # Match count label
         self.match_label = QLabel("No results")
-        self.match_label.setMinimumWidth(100)
+        self.match_label.setFixedWidth(80)
+        self.match_label.setAlignment(Qt.AlignCenter)
         search_row.addWidget(self.match_label)
         
         # Previous button
         self.prev_btn = QPushButton("↑")
-        self.prev_btn.setMaximumWidth(30)
+        self.prev_btn.setFixedWidth(30)
         self.prev_btn.setToolTip("Previous (Shift+Enter)")
+        self.prev_btn.setFocusPolicy(Qt.StrongFocus)
         self.prev_btn.clicked.connect(self.previousRequested.emit)
         search_row.addWidget(self.prev_btn)
         
         # Next button
         self.next_btn = QPushButton("↓")
-        self.next_btn.setMaximumWidth(30)
+        self.next_btn.setFixedWidth(30)
         self.next_btn.setToolTip("Next (Enter)")
+        self.next_btn.setFocusPolicy(Qt.StrongFocus)
         self.next_btn.clicked.connect(self.nextRequested.emit)
         search_row.addWidget(self.next_btn)
         
         # Close button
         close_btn = QPushButton("×")
-        close_btn.setMaximumWidth(30)
+        close_btn.setFixedWidth(30)
         close_btn.setToolTip("Close (Esc)")
+        close_btn.setFocusPolicy(Qt.StrongFocus)
         close_btn.clicked.connect(self.closeRequested.emit)
         search_row.addWidget(close_btn)
         
-        layout.addLayout(search_row)
+        main_layout.addLayout(search_row)
         
-        # Second row: options
+        # Row 2: Replace controls (initially hidden)
+        self.replace_row_widget = QWidget()
+        replace_row = QHBoxLayout(self.replace_row_widget)
+        replace_row.setContentsMargins(0, 0, 0, 0)
+        replace_row.setSpacing(5)
+        
+        # Spacer to align with search input (same width as toggle button)
+        replace_row.addSpacerItem(QSpacerItem(25, 1, QSizePolicy.Fixed, QSizePolicy.Fixed))
+        
+        # Replace input
+        self.replace_input = QLineEdit()
+        self.replace_input.setPlaceholderText("Replace...")
+        self.replace_input.setFixedWidth(300)
+        self.replace_input.setFocusPolicy(Qt.StrongFocus)
+        self.replace_input.installEventFilter(self)
+        replace_row.addWidget(self.replace_input)
+        
+        # Spacer to align with match label
+        replace_row.addSpacerItem(QSpacerItem(80, 1, QSizePolicy.Fixed, QSizePolicy.Fixed))
+        
+        # Replace button
+        self.replace_btn = QPushButton("Replace")
+        self.replace_btn.setFixedWidth(60)
+        self.replace_btn.setToolTip("Replace current match")
+        self.replace_btn.setFocusPolicy(Qt.StrongFocus)
+        self.replace_btn.clicked.connect(self._on_replace)
+        replace_row.addWidget(self.replace_btn)
+        
+        # Replace All button
+        self.replace_all_btn = QPushButton("Replace All")
+        self.replace_all_btn.setFixedWidth(95)
+        self.replace_all_btn.setToolTip("Replace all matches (Ctrl+Alt+Enter)")
+        self.replace_all_btn.setFocusPolicy(Qt.StrongFocus)
+        self.replace_all_btn.clicked.connect(self._on_replace_all)
+        replace_row.addWidget(self.replace_all_btn)
+        
+        # Initially hide the replace row
+        self.replace_row_widget.setVisible(False)
+        main_layout.addWidget(self.replace_row_widget)
+        
+        # Row 3: Options checkboxes
         options_row = QHBoxLayout()
+        options_row.setSpacing(5)
+        
+        # Spacer to align with inputs
+        options_row.addSpacerItem(QSpacerItem(25, 1, QSizePolicy.Fixed, QSizePolicy.Fixed))
         
         self.case_checkbox = QCheckBox("Case (Aa)")
         self.case_checkbox.setToolTip("Match case (Alt+C)")
+        self.case_checkbox.setFocusPolicy(Qt.StrongFocus)
         self.case_checkbox.toggled.connect(self._on_search)
         options_row.addWidget(self.case_checkbox)
         
         self.regex_checkbox = QCheckBox("Regex (.*)")
         self.regex_checkbox.setToolTip("Use regular expression (Alt+R)")
+        self.regex_checkbox.setFocusPolicy(Qt.StrongFocus)
         self.regex_checkbox.toggled.connect(self._on_search)
         options_row.addWidget(self.regex_checkbox)
         
         self.whole_word_checkbox = QCheckBox("Word (ab)")
         self.whole_word_checkbox.setToolTip("Match whole word (Alt+W)")
+        self.whole_word_checkbox.setFocusPolicy(Qt.StrongFocus)
         self.whole_word_checkbox.toggled.connect(self._on_search)
         options_row.addWidget(self.whole_word_checkbox)
         
-        options_row.addStretch()
+        options_row.addStretch()  # Push checkboxes to the left
         
-        layout.addLayout(options_row)
+        main_layout.addLayout(options_row)
         
         # Style
         self.setStyleSheet("""
@@ -307,6 +212,36 @@ class SearchPopup(QWidget):
             self.whole_word_checkbox.isChecked()
         )
     
+    def _toggle_replace_mode(self) -> None:
+        """Toggle the replace UI visibility."""
+        self._replace_mode = not self._replace_mode
+        
+        # Show/hide replace row widget
+        self.replace_row_widget.setVisible(self._replace_mode)
+        
+        # Update toggle button icon
+        if self._replace_mode:
+            self.toggle_replace_btn.setText("▼")
+            # Set focus to replace input when expanding
+            self.replace_input.setFocus()
+            self.replace_input.selectAll()
+        else:
+            self.toggle_replace_btn.setText("▶")
+            # Set focus back to search input when collapsing
+            self.search_input.setFocus()
+        
+        # No need to adjust size - widget has fixed width
+    
+    def _on_replace(self) -> None:
+        """Handle replace current match request."""
+        replacement = self.replace_input.text()
+        self.replaceRequested.emit(replacement)
+    
+    def _on_replace_all(self) -> None:
+        """Handle replace all matches request."""
+        replacement = self.replace_input.text()
+        self.replaceAllRequested.emit(replacement)
+    
     def set_pattern(self, pattern: str) -> None:
         """Set the search pattern."""
         self.search_input.setText(pattern)
@@ -315,6 +250,42 @@ class SearchPopup(QWidget):
     def get_pattern(self) -> str:
         """Get the current search pattern."""
         return self.search_input.text()
+    
+    def get_case_sensitive(self) -> bool:
+        """Get the current case sensitivity state."""
+        return self.case_checkbox.isChecked()
+    
+    def get_use_regex(self) -> bool:
+        """Get the current regex mode state."""
+        return self.regex_checkbox.isChecked()
+    
+    def get_whole_word(self) -> bool:
+        """Get the current whole word matching state."""
+        return self.whole_word_checkbox.isChecked()
+    
+    def set_case_sensitive(self, value: bool) -> None:
+        """Set the case sensitivity state."""
+        self.case_checkbox.setChecked(value)
+    
+    def set_use_regex(self, value: bool) -> None:
+        """Set the regex mode state."""
+        self.regex_checkbox.setChecked(value)
+    
+    def set_whole_word(self, value: bool) -> None:
+        """Set the whole word matching state."""
+        self.whole_word_checkbox.setChecked(value)
+    
+    def get_replace_text(self) -> str:
+        """Get the current replacement text."""
+        return self.replace_input.text()
+    
+    def set_replace_text(self, text: str) -> None:
+        """Set the replacement text."""
+        self.replace_input.setText(text)
+    
+    def is_replace_mode(self) -> bool:
+        """Check if replace mode is active."""
+        return self._replace_mode
     
     def update_match_count(self, current: int, total: int) -> None:
         """
@@ -342,24 +313,57 @@ class SearchPopup(QWidget):
         if self._last_pattern:
             self.search_input.setText(self._last_pattern)
             # Don't trigger search on restore, it will trigger via textChanged
+        
+        # Reset replace mode to hidden when showing popup
+        # User can toggle it with Ctrl+H if needed
+        if self._replace_mode:
+            self._replace_mode = False
+            self.replace_row_widget.setVisible(False)
+            self.toggle_replace_btn.setText("▶")
+        
+        # Show the tool window
         self.show()
         self.raise_()  # Bring to front
         self.activateWindow()  # Activate window
         self.search_input.setFocus(Qt.OtherFocusReason)
         self.search_input.selectAll()
+
+    def hide_popup(self) -> None:
+        """Hide the popup."""
+        self.hide()
+    
+    def keyPressEvent(self, event) -> None:
+        """Handle key presses at widget level (works regardless of child focus).
+        
+        This handles:
+        - Escape: Close popup (from any widget)
+        - Ctrl+H: Toggle replace mode (from any widget)
+        """
+        # Escape - Close popup
+        if event.key() == Qt.Key_Escape:
+            self.closeRequested.emit()
+            return
+        
+        # Ctrl+H - Toggle replace mode
+        if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_H:
+            self._toggle_replace_mode()
+            return
+        
+        super().keyPressEvent(event)
     
     def eventFilter(self, obj, event) -> bool:
-        """Filter events for child widgets to handle shortcuts.
+        """Filter events for input widgets to handle input-specific shortcuts.
         
-        This is necessary because keyboard shortcuts need to work even when
-        the search_input has focus.
+        This handles shortcuts that are specific to the input widgets.
+        Widget-level shortcuts (Esc, Ctrl+H) are handled in keyPressEvent.
+        Tab navigation works automatically via Qt's focus system (popup is a tool window).
         """
         # Don't process events if popup is hidden
         if not self.isVisible():
             return super().eventFilter(obj, event)
         
-        if obj == self.search_input and event.type() == event.KeyPress:
-            # Handle Alt+C, Alt+R, Alt+W shortcuts
+        if obj in (self.search_input, self.replace_input) and event.type() == QEvent.KeyPress:
+            # Handle Alt+C, Alt+R, Alt+W shortcuts (popup-specific)
             if event.modifiers() == Qt.AltModifier:
                 if event.key() == Qt.Key_C:
                     self.case_checkbox.setChecked(not self.case_checkbox.isChecked())
@@ -371,62 +375,22 @@ class SearchPopup(QWidget):
                     self.whole_word_checkbox.setChecked(not self.whole_word_checkbox.isChecked())
                     return True
             
-            # Handle Enter/Shift+Enter
-            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            # Handle Enter/Shift+Enter in search input
+            if obj == self.search_input and event.key() in (Qt.Key_Return, Qt.Key_Enter):
                 if event.modifiers() == Qt.ShiftModifier:
                     self.previousRequested.emit()
                 else:
                     self.nextRequested.emit()
                 return True
             
-            # Handle Escape
-            elif event.key() == Qt.Key_Escape:
-                self.closeRequested.emit()
+            # Handle Enter in replace input - perform replace
+            if obj == self.replace_input and event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                if event.modifiers() == (Qt.ControlModifier | Qt.AltModifier):
+                    # Ctrl+Alt+Enter - Replace all
+                    self._on_replace_all()
+                else:
+                    # Enter - Replace current
+                    self._on_replace()
                 return True
         
         return super().eventFilter(obj, event)
-    
-    def keyPressEvent(self, event) -> None:
-        """Handle key press events."""
-        # Don't process events if popup is hidden
-        if not self.isVisible():
-            super().keyPressEvent(event)
-            return
-        
-        # Enter - Next match
-        if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
-            if event.modifiers() == Qt.ShiftModifier:
-                # Shift+Enter - Previous match
-                self.previousRequested.emit()
-            else:
-                # Enter - Next match
-                self.nextRequested.emit()
-            event.accept()
-            return
-        
-        # Escape - Close
-        elif event.key() == Qt.Key_Escape:
-            self.closeRequested.emit()
-            event.accept()
-            return
-        
-        # Alt+C - Toggle case sensitivity
-        elif event.key() == Qt.Key_C and event.modifiers() == Qt.AltModifier:
-            self.case_checkbox.setChecked(not self.case_checkbox.isChecked())
-            event.accept()
-            return
-        
-        # Alt+R - Toggle regex
-        elif event.key() == Qt.Key_R and event.modifiers() == Qt.AltModifier:
-            self.regex_checkbox.setChecked(not self.regex_checkbox.isChecked())
-            event.accept()
-            return
-        
-        # Alt+W - Toggle whole word
-        elif event.key() == Qt.Key_W and event.modifiers() == Qt.AltModifier:
-            self.whole_word_checkbox.setChecked(not self.whole_word_checkbox.isChecked())
-            event.accept()
-            return
-        
-        # Default behavior
-        super().keyPressEvent(event)
