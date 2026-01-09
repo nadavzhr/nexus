@@ -13,13 +13,20 @@ from PyQt5.QtGui import (
 )
 from PyQt5.QtWidgets import QPlainTextEdit, QWidget, QTextEdit, QShortcut
 
-from .line_numbers import LineNumberArea
-from .highlighter import PygmentsHighlighter
-from .theme import ThemeManager, Theme
-from .search import SearchService, SearchPopup
-from .shortcuts import EditorActions
-from .goto_line_overlay import GotoLineOverlay
+# Import from new modular structure
+from .ui.line_number_area import LineNumberArea
+from .ui.goto_line_overlay import GotoLineOverlay
+from .ui.search_popup import SearchService, SearchPopup
+from .highlighting.highlighter import PygmentsHighlighter
+from .highlighting.theme import ThemeManager, Theme
 from .services.decoration_service import DecorationService, DecorationLayer
+from .shortcuts import EditorActions
+
+# Keep backward compatibility imports from old locations
+try:
+    from .line_numbers import LineNumberArea as _  # noqa
+except ImportError:
+    pass
 
 
 class LineData(QTextBlockUserData):
