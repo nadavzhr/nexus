@@ -22,50 +22,13 @@ from ..highlighting.theme import ThemeManager, Theme
 from ..services.decoration_service import DecorationService, DecorationLayer
 from ..services.search_service import SearchService
 from ..controllers.shortcut_controller import EditorActions
+from ..models.line_data import LineData
 
 # Keep backward compatibility imports from old locations
 try:
     from .line_numbers import LineNumberArea as _  # noqa
 except ImportError:
     pass
-
-
-class LineData(QTextBlockUserData):
-    """
-    Per-line metadata storage.
-    
-    Each QTextBlock can have an associated LineData instance that stores:
-    - Arbitrary user-defined payload data
-    - Background color for the line
-    - Tags for categorization
-    
-    This enables line-centric interaction similar to QListView items.
-    """
-    
-    def __init__(self, payload: Any = None, bg_color: Optional[QColor] = None):
-        """
-        Initialize line data.
-        
-        Args:
-            payload: User-defined data to associate with this line
-            bg_color: Optional background color for this line
-        """
-        super().__init__()
-        self.payload = payload
-        self.bg_color = bg_color
-        self.tags: set = set()
-    
-    def add_tag(self, tag: str) -> None:
-        """Add a tag to this line."""
-        self.tags.add(tag)
-    
-    def remove_tag(self, tag: str) -> None:
-        """Remove a tag from this line."""
-        self.tags.discard(tag)
-    
-    def has_tag(self, tag: str) -> bool:
-        """Check if this line has a specific tag."""
-        return tag in self.tags
 
 
 class CodeEditor(QPlainTextEdit):
