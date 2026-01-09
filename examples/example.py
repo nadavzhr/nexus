@@ -12,7 +12,7 @@ This example demonstrates:
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QColor
 from code_editor import CodeEditor, LineData
-from code_editor.highlighter import get_lexer_for_language
+from code_editor.highlighting.highlighter import get_lexer_for_language
 
 # Initialize QApplication
 app = QApplication([])

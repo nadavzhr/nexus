@@ -7,6 +7,8 @@ Enhanced demo showcasing all new features:
 """
 
 import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QComboBox, QTextEdit, QSplitter, QCheckBox
@@ -15,7 +17,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor
 
 from code_editor import CodeEditor
-from code_editor.highlighter import get_lexer_for_language
+from code_editor.highlighting.highlighter import get_lexer_for_language
 
 # Sample Python code
 SAMPLE_CODE = """# Enhanced Code Editor Demo

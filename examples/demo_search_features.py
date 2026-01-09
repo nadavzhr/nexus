@@ -4,6 +4,8 @@ This is a visual demo - run it manually to see the features.
 """
 
 import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QLabel, QPushButton, QHBoxLayout
@@ -11,7 +13,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 
 from code_editor import CodeEditor
-from code_editor.highlighter import get_lexer_for_language
+from code_editor.highlighting.highlighter import get_lexer_for_language
 
 
 class SearchDemoWindow(QMainWindow):

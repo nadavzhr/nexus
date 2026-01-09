@@ -3,13 +3,15 @@ Demo of smart copy/cut line features.
 """
 
 import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QTextEdit
 )
 
 from code_editor import CodeEditor
-from code_editor.highlighter import get_lexer_for_language
+from code_editor.highlighting.highlighter import get_lexer_for_language
 
 SAMPLE_CODE = """# Smart Copy/Cut Demo
 def calculate(x, y):
