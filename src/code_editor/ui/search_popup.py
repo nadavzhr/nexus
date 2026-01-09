@@ -7,8 +7,8 @@ This module provides the search popup UI component.
 from typing import Optional
 from PyQt5.QtCore import Qt, pyqtSignal, QEvent
 from PyQt5.QtWidgets import (
-    QWidget, QHBoxLayout, QLineEdit, QPushButton, 
-    QCheckBox, QLabel, QVBoxLayout
+    QWidget, QGridLayout, QLineEdit, QPushButton, 
+    QCheckBox, QLabel
 )
 
 
@@ -42,133 +42,112 @@ class SearchPopup(QWidget):
         # Make it an independent tool window (not a child widget)
         # This gives it its own focus context, completely isolated from parent
         # Qt's tab navigation works naturally within the tool window
-        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        # Removed Qt.WindowStaysOnTopHint - it's annoying and not needed
+        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
         self.setAutoFillBackground(True)
         
         # Set focus policy for the popup
         self.setFocusPolicy(Qt.StrongFocus)
     
     def _setup_ui(self) -> None:
-        """Setup the UI components."""
-        layout = QVBoxLayout(self)
+        """Setup the UI components with clean grid layout."""
+        # Use grid layout for perfect alignment
+        layout = QGridLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(5)
         
-        # First row: search input and buttons
-        search_row = QHBoxLayout()
-        
-        # Toggle replace button
+        # Column 0: Toggle replace button (spans 2 rows)
         self.toggle_replace_btn = QPushButton("▶")
         self.toggle_replace_btn.setMaximumWidth(25)
         self.toggle_replace_btn.setToolTip("Toggle Replace (Ctrl+H)")
         self.toggle_replace_btn.clicked.connect(self._toggle_replace_mode)
-        self.toggle_replace_btn.setFocusPolicy(Qt.StrongFocus)  # Enable tab navigation
-        search_row.addWidget(self.toggle_replace_btn)
+        self.toggle_replace_btn.setFocusPolicy(Qt.StrongFocus)
+        layout.addWidget(self.toggle_replace_btn, 0, 0, 2, 1)  # Row 0-1, Col 0, spans 2 rows
         
+        # Row 0, Column 1: Search input
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Find...")
-        self.search_input.setMinimumWidth(200)
-        self.search_input.setFocusPolicy(Qt.StrongFocus)  # Enable tab navigation
-        # Live search as user types
+        self.search_input.setMinimumWidth(250)
+        self.search_input.setFocusPolicy(Qt.StrongFocus)
         self.search_input.textChanged.connect(self._on_search)
-        # Install event filter to handle Alt shortcuts when input has focus
         self.search_input.installEventFilter(self)
-        search_row.addWidget(self.search_input)
+        layout.addWidget(self.search_input, 0, 1)
         
-        # Match count label
+        # Row 0, Column 2: Match count label
         self.match_label = QLabel("No results")
-        self.match_label.setMinimumWidth(100)
-        search_row.addWidget(self.match_label)
+        self.match_label.setMinimumWidth(80)
+        layout.addWidget(self.match_label, 0, 2)
         
-        # Previous button
+        # Row 0, Column 3: Previous button
         self.prev_btn = QPushButton("↑")
         self.prev_btn.setMaximumWidth(30)
         self.prev_btn.setToolTip("Previous (Shift+Enter)")
-        self.prev_btn.setFocusPolicy(Qt.StrongFocus)  # Enable tab navigation
+        self.prev_btn.setFocusPolicy(Qt.StrongFocus)
         self.prev_btn.clicked.connect(self.previousRequested.emit)
-        search_row.addWidget(self.prev_btn)
+        layout.addWidget(self.prev_btn, 0, 3)
         
-        # Next button
+        # Row 0, Column 4: Next button
         self.next_btn = QPushButton("↓")
         self.next_btn.setMaximumWidth(30)
         self.next_btn.setToolTip("Next (Enter)")
-        self.next_btn.setFocusPolicy(Qt.StrongFocus)  # Enable tab navigation
+        self.next_btn.setFocusPolicy(Qt.StrongFocus)
         self.next_btn.clicked.connect(self.nextRequested.emit)
-        search_row.addWidget(self.next_btn)
+        layout.addWidget(self.next_btn, 0, 4)
         
-        # Close button
+        # Row 0, Column 5: Close button
         close_btn = QPushButton("×")
         close_btn.setMaximumWidth(30)
         close_btn.setToolTip("Close (Esc)")
-        close_btn.setFocusPolicy(Qt.StrongFocus)  # Enable tab navigation
+        close_btn.setFocusPolicy(Qt.StrongFocus)
         close_btn.clicked.connect(self.closeRequested.emit)
-        search_row.addWidget(close_btn)
+        layout.addWidget(close_btn, 0, 5)
         
-        layout.addLayout(search_row)
-        
-        # Replace row (initially hidden)
-        self.replace_row = QHBoxLayout()
-        
-        # Spacer to align with search input (for toggle button width)
-        spacer = QLabel("")
-        spacer.setMaximumWidth(25)
-        self.replace_row.addWidget(spacer)
-        
+        # Row 1, Column 1: Replace input (initially hidden)
         self.replace_input = QLineEdit()
         self.replace_input.setPlaceholderText("Replace...")
-        self.replace_input.setMinimumWidth(200)
-        self.replace_input.setFocusPolicy(Qt.StrongFocus)  # Enable tab navigation
+        self.replace_input.setMinimumWidth(250)
+        self.replace_input.setFocusPolicy(Qt.StrongFocus)
         self.replace_input.installEventFilter(self)
-        self.replace_row.addWidget(self.replace_input)
+        self.replace_input.setVisible(False)
+        layout.addWidget(self.replace_input, 1, 1)
         
-        # Replace button
+        # Row 1, Column 2-3: Spacer (align replace buttons to the right)
+        # Using column span to push buttons to the right
+        
+        # Row 1, Column 4: Replace button
         self.replace_btn = QPushButton("Replace")
-        self.replace_btn.setToolTip("Replace current match (Ctrl+Shift+1)")
-        self.replace_btn.setFocusPolicy(Qt.StrongFocus)  # Enable tab navigation
+        self.replace_btn.setToolTip("Replace current match")
+        self.replace_btn.setFocusPolicy(Qt.StrongFocus)
         self.replace_btn.clicked.connect(self._on_replace)
-        self.replace_row.addWidget(self.replace_btn)
+        self.replace_btn.setVisible(False)
+        layout.addWidget(self.replace_btn, 1, 4)
         
-        # Replace All button
+        # Row 1, Column 5: Replace All button  
         self.replace_all_btn = QPushButton("Replace All")
         self.replace_all_btn.setToolTip("Replace all matches (Ctrl+Alt+Enter)")
-        self.replace_all_btn.setFocusPolicy(Qt.StrongFocus)  # Enable tab navigation
+        self.replace_all_btn.setFocusPolicy(Qt.StrongFocus)
         self.replace_all_btn.clicked.connect(self._on_replace_all)
-        self.replace_row.addWidget(self.replace_all_btn)
+        self.replace_all_btn.setVisible(False)
+        layout.addWidget(self.replace_all_btn, 1, 5)
         
-        # Create widget container for replace row so we can show/hide it
-        self.replace_widget = QWidget()
-        self.replace_widget.setLayout(self.replace_row)
-        self.replace_widget.setVisible(False)  # Hidden by default
-        layout.addWidget(self.replace_widget)
-        
-        # Third row: options
-        options_row = QHBoxLayout()
-        
+        # Row 2, Column 0-5: Options checkboxes
         self.case_checkbox = QCheckBox("Case (Aa)")
         self.case_checkbox.setToolTip("Match case (Alt+C)")
-        self.case_checkbox.setFocusPolicy(Qt.StrongFocus)  # Enable tab navigation
+        self.case_checkbox.setFocusPolicy(Qt.StrongFocus)
         self.case_checkbox.toggled.connect(self._on_search)
-        options_row.addWidget(self.case_checkbox)
+        layout.addWidget(self.case_checkbox, 2, 1)
         
         self.regex_checkbox = QCheckBox("Regex (.*)")
         self.regex_checkbox.setToolTip("Use regular expression (Alt+R)")
-        self.regex_checkbox.setFocusPolicy(Qt.StrongFocus)  # Enable tab navigation
+        self.regex_checkbox.setFocusPolicy(Qt.StrongFocus)
         self.regex_checkbox.toggled.connect(self._on_search)
-        options_row.addWidget(self.regex_checkbox)
+        layout.addWidget(self.regex_checkbox, 2, 2)
         
         self.whole_word_checkbox = QCheckBox("Word (ab)")
         self.whole_word_checkbox.setToolTip("Match whole word (Alt+W)")
-        self.whole_word_checkbox.setFocusPolicy(Qt.StrongFocus)  # Enable tab navigation
+        self.whole_word_checkbox.setFocusPolicy(Qt.StrongFocus)
         self.whole_word_checkbox.toggled.connect(self._on_search)
-        options_row.addWidget(self.whole_word_checkbox)
-        
-        options_row.addStretch()
-        
-        layout.addLayout(options_row)
-        
-        # Install event filter for popup-specific shortcuts
-        self.search_input.installEventFilter(self)
-        self.replace_input.installEventFilter(self)
+        layout.addWidget(self.whole_word_checkbox, 2, 3)
         
         # Style
         self.setStyleSheet("""
@@ -207,7 +186,11 @@ class SearchPopup(QWidget):
     def _toggle_replace_mode(self) -> None:
         """Toggle the replace UI visibility."""
         self._replace_mode = not self._replace_mode
-        self.replace_widget.setVisible(self._replace_mode)
+        
+        # Show/hide replace widgets
+        self.replace_input.setVisible(self._replace_mode)
+        self.replace_btn.setVisible(self._replace_mode)
+        self.replace_all_btn.setVisible(self._replace_mode)
         
         # Update toggle button icon
         if self._replace_mode:
@@ -309,7 +292,9 @@ class SearchPopup(QWidget):
         # User can toggle it with Ctrl+H if needed
         if self._replace_mode:
             self._replace_mode = False
-            self.replace_widget.setVisible(False)
+            self.replace_input.setVisible(False)
+            self.replace_btn.setVisible(False)
+            self.replace_all_btn.setVisible(False)
             self.toggle_replace_btn.setText("▶")
         
         # Show the tool window
@@ -323,10 +308,30 @@ class SearchPopup(QWidget):
         """Hide the popup."""
         self.hide()
     
-    def eventFilter(self, obj, event) -> bool:
-        """Filter events for input widgets to handle popup-specific shortcuts.
+    def keyPressEvent(self, event) -> None:
+        """Handle key presses at widget level (works regardless of child focus).
         
-        This handles shortcuts that are specific to the search popup.
+        This handles:
+        - Escape: Close popup (from any widget)
+        - Ctrl+H: Toggle replace mode (from any widget)
+        """
+        # Escape - Close popup
+        if event.key() == Qt.Key_Escape:
+            self.closeRequested.emit()
+            return
+        
+        # Ctrl+H - Toggle replace mode
+        if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_H:
+            self._toggle_replace_mode()
+            return
+        
+        super().keyPressEvent(event)
+    
+    def eventFilter(self, obj, event) -> bool:
+        """Filter events for input widgets to handle input-specific shortcuts.
+        
+        This handles shortcuts that are specific to the input widgets.
+        Widget-level shortcuts (Esc, Ctrl+H) are handled in keyPressEvent.
         Tab navigation works automatically via Qt's focus system (popup is a tool window).
         """
         # Don't process events if popup is hidden
@@ -362,11 +367,6 @@ class SearchPopup(QWidget):
                 else:
                     # Enter - Replace current
                     self._on_replace()
-                return True
-            
-            # Handle Escape
-            if event.key() == Qt.Key_Escape:
-                self.closeRequested.emit()
                 return True
         
         return super().eventFilter(obj, event)
