@@ -7,7 +7,7 @@ This fixes the highlighting bugs by providing a single source of truth for decor
 
 from typing import Dict, List, Optional
 from enum import Enum, auto
-from PyQt5.QtWidgets import QPlainTextEdit
+from PyQt5.QtWidgets import QPlainTextEdit, QTextEdit
 from PyQt5.QtGui import QColor, QTextCursor
 
 
@@ -41,9 +41,8 @@ class Decoration:
         self.bg_color = bg_color
         self.full_width = full_width
     
-    def to_extra_selection(self) -> 'QTextEdit.ExtraSelection':
+    def to_extra_selection(self) -> QTextEdit.ExtraSelection:
         """Convert to QTextEdit.ExtraSelection."""
-        from PyQt5.QtWidgets import QTextEdit
         selection = QTextEdit.ExtraSelection()
         selection.cursor = self.cursor
         selection.format.setBackground(self.bg_color)

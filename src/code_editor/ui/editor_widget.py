@@ -5,11 +5,11 @@ This module provides the main CodeEditor widget and LineData classes.
 """
 
 from typing import Optional, Any, Dict, List
-from PyQt5.QtCore import Qt, pyqtSignal, pyqtProperty, QRect
+from PyQt5.QtCore import Qt, pyqtSignal, pyqtProperty, QRect, QEvent
 from PyQt5.QtGui import (
     QTextBlockUserData, QColor, QPainter, QTextFormat,
     QTextCursor, QPaintEvent, QMouseEvent, QResizeEvent, QTextDocument,
-    QKeySequence
+    QKeySequence, QKeyEvent
 )
 from PyQt5.QtWidgets import QPlainTextEdit, QWidget, QTextEdit, QShortcut
 
@@ -641,14 +641,14 @@ class CodeEditor(QPlainTextEdit):
                     self.add_decoration(line_number, hover_color, 'hover')
                 self._last_hover_line = line_number
     
-    def leaveEvent(self, event: Any) -> None:
+    def leaveEvent(self, event: QEvent) -> None:
         """Handle mouse leave events."""
         super().leaveEvent(event)
         if self._hover_enabled:
             self.clear_decorations('hover')
             self._last_hover_line = -1
     
-    def keyPressEvent(self, event: Any) -> None:
+    def keyPressEvent(self, event: QKeyEvent) -> None:
         """Handle key press events for smart copy/cut/paste."""
         from PyQt5.QtCore import Qt
         
