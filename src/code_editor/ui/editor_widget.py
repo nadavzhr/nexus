@@ -5,11 +5,11 @@ This module provides the main CodeEditor widget and LineData classes.
 """
 
 from typing import Optional, Any, Dict, List
-from PyQt5.QtCore import Qt, pyqtSignal, QRect
+from PyQt5.QtCore import Qt, pyqtSignal, pyqtProperty, QRect, QEvent
 from PyQt5.QtGui import (
     QTextBlockUserData, QColor, QPainter, QTextFormat,
     QTextCursor, QPaintEvent, QMouseEvent, QResizeEvent, QTextDocument,
-    QKeySequence
+    QKeySequence, QKeyEvent
 )
 from PyQt5.QtWidgets import QPlainTextEdit, QWidget, QTextEdit, QShortcut
 
@@ -21,7 +21,16 @@ from ..highlighting.highlighter import PygmentsHighlighter
 from ..highlighting.theme import ThemeManager, Theme
 from ..services.decoration_service import DecorationService, DecorationLayer
 from ..services.search_service import SearchService
+from ..services.language_service import LanguageService
 from ..controllers.shortcut_controller import EditorActions
+from ..models.line_data import LineData
+
+# Import protocols for proper type hints (demonstrates correct usage)
+from ..protocols import (
+    SearchServiceProtocol,
+    DecorationServiceProtocol,
+    LanguageServiceProtocol
+)
 
 # Keep backward compatibility imports from old locations
 try:
@@ -30,64 +39,158 @@ except ImportError:
     pass
 
 
-class LineData(QTextBlockUserData):
-    """
-    Per-line metadata storage.
-    
-    Each QTextBlock can have an associated LineData instance that stores:
-    - Arbitrary user-defined payload data
-    - Background color for the line
-    - Tags for categorization
-    
-    This enables line-centric interaction similar to QListView items.
-    """
-    
-    def __init__(self, payload: Any = None, bg_color: Optional[QColor] = None):
-        """
-        Initialize line data.
-        
-        Args:
-            payload: User-defined data to associate with this line
-            bg_color: Optional background color for this line
-        """
-        super().__init__()
-        self.payload = payload
-        self.bg_color = bg_color
-        self.tags: set = set()
-    
-    def add_tag(self, tag: str) -> None:
-        """Add a tag to this line."""
-        self.tags.add(tag)
-    
-    def remove_tag(self, tag: str) -> None:
-        """Remove a tag from this line."""
-        self.tags.discard(tag)
-    
-    def has_tag(self, tag: str) -> bool:
-        """Check if this line has a specific tag."""
-        return tag in self.tags
-
-
 class CodeEditor(QPlainTextEdit):
     """
-    Standalone multi-language code editor widget.
+    Professional multi-language code editor widget - self-contained and production-ready.
     
-    A professional code editor built on QPlainTextEdit with:
-    - Multi-language syntax highlighting via Pygments
-    - Line-aware data model (QTextBlock + LineData)
-    - Line numbering gutter
-    - Search and decoration support
-    - Read-only and editable modes
-    - Clean public API for integration
+    A standalone code editor built on QPlainTextEdit, designed for easy integration
+    into large-scale applications. Provides a rich API through methods and signals
+    for complete control without requiring subclassing.
+    
+    Core Features:
+    ===============
+    - **Multi-language syntax highlighting**: Via Pygments, with support for custom lexers
+    - **Line-aware data model**: Attach metadata to individual lines (LineData)
+    - **Line numbering gutter**: Auto-sizing, theme-aware
+    - **VS Code-style search**: Popup with regex, case, whole-word options + replace
+    - **Go to line overlay**: Quick navigation with Ctrl+G
+    - **Decorations**: Highlight lines with custom colors (search, current line, custom)
+    - **Theme support**: Light/dark themes with custom theme registration
+    - **Keyboard shortcuts**: Comment toggle, duplicate line, move line, etc.
+    - **Read-only mode**: With line activation (double-click) support
+    - **VS Code-style copy/paste**: Copy full line when no selection
     
     Signals:
-        lineActivated: Emitted when a line is activated (double-clicked in read-only mode)
-        cursorMoved: Emitted when the cursor position changes
+    ========
+    lineActivated(int, object):
+        Emitted when a line is activated (double-clicked) in read-only mode.
+        Args:
+            line_number (int): 0-based line number
+            line_data (object): LineData.payload if exists, None otherwise
+        
+        Usage: Connect to open file, jump to definition, etc.
+        Example: editor.lineActivated.connect(lambda num, data: print(f"Line {num}: {data}"))
+    
+    cursorMoved(int):
+        Emitted when the cursor position changes (line number changes).
+        Args:
+            line_number (int): 0-based line number of new cursor position
+        
+        Usage: Update status bar, line info displays, etc.
+        Example: editor.cursorMoved.connect(lambda num: status.setText(f"Line {num + 1}"))
+    
+    Public API - Document & Lines:
+    ==============================
+    - get_line_data(line_number: int) -> Optional[LineData]: Get line metadata
+    - set_line_data(line_number: int, data: LineData) -> bool: Set line metadata
+    - create_line_data(line_number: int, payload=None, bg_color=None) -> bool: Create and set
+    - get_line_text(line_number: int) -> Optional[str]: Get line text
+    - line_count() -> int: Total number of lines
+    
+    Public API - Language & Highlighting:
+    =====================================
+    - register_language(name: str, lexer, file_extensions: List[str]): Add language support
+    - set_language(name: str) -> bool: Activate syntax highlighting for language
+    - get_current_language() -> Optional[str]: Get active language name
+    - disable_highlighting(): Turn off syntax highlighting
+    
+    Public API - Search & Navigation:
+    =================================
+    - show_search_popup(): Show VS Code-style search widget (Ctrl+F)
+    - show_replace_popup(): Show search with replace mode (Ctrl+H)
+    - hide_search_popup(): Programmatically hide search
+    - search(pattern: str, regex: bool) -> int: Programmatic search (returns match count)
+    - clear_search(): Clear search highlights
+    - go_to_line(): Show goto line overlay (Ctrl+G)
+    - jump_to_line(line_number: int): Programmatically jump to line
+    
+    Public API - Decorations:
+    =========================
+    - add_decoration(line_number: int, bg_color: QColor, type: str): Highlight a line
+    - clear_decorations(type: Optional[str]): Clear decorations by type or all
+    
+    Public API - Themes:
+    ====================
+    - set_theme(name: str): Switch theme ('light', 'dark', or custom)
+    - get_current_theme() -> Theme: Get active theme object
+    - register_theme(theme: Theme): Add custom theme
+    - list_themes() -> List[str]: Get available theme names
+    
+    Public API - Keyboard Actions:
+    ==============================
+    - toggle_comment(): Comment/uncomment line or selection (Ctrl+/)
+    - duplicate_line(): Duplicate current line (Ctrl+D)
+    - move_line_up(): Move line up (Alt+Up)
+    - move_line_down(): Move line down (Alt+Down)
+    - copy_line(): Copy full line to clipboard (Ctrl+C with no selection)
+    - cut_line(): Cut full line to clipboard (Ctrl+X with no selection)
+    - paste_line(): Paste with line-aware behavior (Ctrl+V)
+    
+    Public API - Configuration:
+    ===========================
+    - setReadOnly(bool) / setEditable(bool): Control edit mode
+    - set_hover_enabled(bool): Enable/disable hover in read-only mode
+    - set_current_line_highlight_enabled(bool): Toggle current line highlight
+    
+    Usage Example:
+    ==============
+    ```python
+    from PyQt5.QtWidgets import QApplication
+    from code_editor import CodeEditor
+    from code_editor.highlighting.highlighter import get_lexer_for_language
+    
+    app = QApplication([])
+    
+    # Create and configure editor
+    editor = CodeEditor()
+    editor.register_language('python', get_lexer_for_language('python'))
+    editor.set_language('python')
+    
+    # Set content
+    editor.setPlainText("def hello():\\n    print('Hello!')")
+    
+    # Connect signals
+    editor.cursorMoved.connect(lambda line: print(f"Line: {line + 1}"))
+    editor.lineActivated.connect(lambda line, data: print(f"Activated: {line}"))
+    
+    # Show and run
+    editor.show()
+    app.exec_()
+    ```
+    
+    Architecture:
+    =============
+    The widget follows SOLID principles with clear separation of concerns:
+    - Models: LineData, SearchModel (data structures)
+    - Services: DecorationService, SearchService, LanguageService (business logic)
+    - Controllers: EditorActions (keyboard shortcuts and actions)
+    - UI: SearchPopup, GotoLineOverlay, LineNumberArea (presentation)
+    
+    Service Access (for advanced customization):
+    ============================================
+    Services are accessible through properties and can be extended/replaced:
+    - self._decoration_service: DecorationService instance
+    - self._search_service: SearchService instance
+    - self._language_service: LanguageService instance
+    - self._theme_manager: ThemeManager instance
+    - self._actions: EditorActions controller
+    
+    All services follow defined protocols (see code_editor.protocols module)
+    for easy mocking, testing, and alternative implementations.
+    
+    Example - Custom Search Service:
+    ```python
+    editor = CodeEditor()
+    # Access existing service
+    search_service = editor._search_service
+    # Or replace with custom implementation following SearchServiceProtocol
+    editor._search_service = MyCustomSearchService(editor.document())
+    ```
     """
     
-    # Signals
-    lineActivated = pyqtSignal(int, object)  # line_number, line_data
-    cursorMoved = pyqtSignal(int)  # line_number
+    # Signals with comprehensive documentation above
+    lineActivated = pyqtSignal(int, object)  # line_number (0-based), line_data (payload or None)
+    cursorMoved = pyqtSignal(int)  # line_number (0-based)
     
     def __init__(self, parent: Optional[QWidget] = None):
         """
@@ -98,52 +201,74 @@ class CodeEditor(QPlainTextEdit):
         """
         super().__init__(parent)
         
-        # Initialize components
+        # Core components
         self._line_number_area = LineNumberArea(self)
         self._highlighter: Optional[PygmentsHighlighter] = None
-        self._languages: Dict[str, Any] = {}
-        self._current_language: Optional[str] = None
         
-        # Theme management
+        # Services (business logic) - TYPED AS PROTOCOLS
+        # This demonstrates proper protocol usage for dependency injection
         self._theme_manager = ThemeManager()
+        self._language_service: LanguageServiceProtocol = LanguageService()
+        self._search_service: SearchServiceProtocol = SearchService(self.document())
+        self._decoration_service: DecorationServiceProtocol = DecorationService(self)
         
-        # Search components
-        self._search_service = SearchService(self.document())
-        self._search_popup: Optional[SearchPopup] = None
-        
-        # Goto line overlay
-        self._goto_line_overlay: Optional[GotoLineOverlay] = None
-        
-        # Editor actions
+        # Controllers
         self._actions = EditorActions(self)
         
-        # Decoration service (centralized decoration management - fixes highlighting bugs)
-        self._decoration_service = DecorationService(self)
+        # UI overlays (lazy initialization)
+        self._search_popup: Optional[SearchPopup] = None
+        self._goto_line_overlay: Optional[GotoLineOverlay] = None
         
-        # Keep legacy dict for backward compatibility during transition
-        self._decorations: Dict[str, List[QTextEdit.ExtraSelection]] = {}
-        
-        # Search state (legacy - kept for compatibility)
-        self._search_pattern: Optional[str] = None
-        self._search_regex: bool = False
-        
-        # Hover state
+        # State
         self._hover_enabled: bool = True
         self._last_hover_line: int = -1
-        
-        # Current line highlighting
         self._current_line_highlight_enabled: bool = True
-        
-        # Track if last copy/cut was a full line (for VS Code-style paste)
         self._last_copy_was_line: bool = False
         
-        # Setup UI
+        # Setup
         self._setup_ui()
         self._connect_signals()
         self._setup_shortcuts()
-        
-        # Apply initial theme
         self._apply_theme()
+    
+    # ==================== Qt Properties (for Qt Designer / QML integration) ====================
+    
+    @pyqtProperty(str)
+    def currentLanguage(self) -> str:
+        """
+        Qt property for the current language.
+        
+        Allows accessing/setting the language in Qt Designer and QML.
+        """
+        return self._language_service.get_current_language() or ""
+    
+    @currentLanguage.setter
+    def currentLanguage(self, name: str) -> None:
+        """Set the current language via Qt property."""
+        if name:
+            self.set_language(name)
+    
+    @pyqtProperty(bool)
+    def hoverEnabled(self) -> bool:
+        """Qt property for hover highlighting state."""
+        return self._hover_enabled
+    
+    @hoverEnabled.setter
+    def hoverEnabled(self, enabled: bool) -> None:
+        """Set hover enabled via Qt property."""
+        self.set_hover_enabled(enabled)
+    
+    @pyqtProperty(bool)
+    def currentLineHighlightEnabled(self) -> bool:
+        """Qt property for current line highlighting state."""
+        return self._current_line_highlight_enabled
+    
+    @currentLineHighlightEnabled.setter
+    def currentLineHighlightEnabled(self, enabled: bool) -> None:
+        """Set current line highlight enabled via Qt property."""
+        self.set_current_line_highlight_enabled(enabled)
+    
+    # ==================== Private Setup Methods ====================
     
     def _setup_ui(self) -> None:
         """Configure the editor's appearance and behavior."""
@@ -308,10 +433,7 @@ class CodeEditor(QPlainTextEdit):
             lexer: Pygments lexer instance or class
             file_extensions: Optional list of file extensions (e.g., ['.py', '.pyw'])
         """
-        self._languages[name] = {
-            'lexer': lexer,
-            'extensions': file_extensions or []
-        }
+        self._language_service.register_language(name, lexer)
     
     def set_language(self, name: str) -> bool:
         """
@@ -323,11 +445,10 @@ class CodeEditor(QPlainTextEdit):
         Returns:
             True if successful, False if language not found
         """
-        if name not in self._languages:
+        if not self._language_service.has_language(name):
             return False
         
-        lang_info = self._languages[name]
-        lexer = lang_info['lexer']
+        lexer = self._language_service.get_lexer(name)
         
         # Create or update highlighter
         if self._highlighter:
@@ -335,19 +456,19 @@ class CodeEditor(QPlainTextEdit):
         else:
             self._highlighter = PygmentsHighlighter(self.document(), lexer)
         
-        self._current_language = name
+        self._language_service.set_current_language(name)
         return True
     
     def get_current_language(self) -> Optional[str]:
         """Get the name of the currently active language."""
-        return self._current_language
+        return self._language_service.get_current_language()
     
     def disable_highlighting(self) -> None:
         """Disable syntax highlighting."""
         if self._highlighter:
             self._highlighter.setDocument(None)
             self._highlighter = None
-        self._current_language = None
+        self._language_service.clear()
     
     # ==================== Decoration API ====================
     
@@ -410,7 +531,9 @@ class CodeEditor(QPlainTextEdit):
     
     def search(self, pattern: str, regex: bool = False) -> int:
         """
-        Search for a pattern and highlight all matches (using DecorationService).
+        Search for a pattern and highlight all matches.
+        
+        Delegates to SearchService for logic, uses DecorationService for display.
         
         Args:
             pattern: Search pattern
@@ -419,43 +542,29 @@ class CodeEditor(QPlainTextEdit):
         Returns:
             Number of matches found
         """
-        self._search_pattern = pattern
-        self._search_regex = regex
+        # Delegate search logic to service
+        count = self._search_service.search(pattern, case_sensitive=False, 
+                                           use_regex=regex, whole_word=False)
+        
+        # Clear previous highlights
         self._decoration_service.clear_layer(DecorationLayer.SEARCH_MATCHES)
         
-        if not pattern:
-            self._decoration_service.apply()
-            return 0
-        
-        # Find all matches
-        matches = 0
-        cursor = QTextCursor(self.document())
-        highlight_color = QColor(Qt.yellow)
-        
-        flags = QTextDocument.FindFlags()
-        if regex:
-            # For regex support, we'd need to use QRegExp or QRegularExpression
-            # For now, use plain text
-            pass
-        
-        while True:
-            cursor = self.document().find(pattern, cursor, flags)
-            if cursor.isNull():
-                break
-            
-            self._decoration_service.add_decoration(
-                DecorationLayer.SEARCH_MATCHES,
-                cursor,
-                highlight_color
-            )
-            matches += 1
+        if count > 0:
+            # Highlight matches
+            theme = self._theme_manager.get_current_theme()
+            for match in self._search_service.get_matches():
+                self._decoration_service.add_decoration(
+                    DecorationLayer.SEARCH_MATCHES,
+                    match.cursor,
+                    theme.search_match
+                )
         
         self._decoration_service.apply()
-        return matches
+        return count
     
     def clear_search(self) -> None:
         """Clear search highlighting."""
-        self._search_pattern = None
+        self._search_service.clear()
         self.clear_decorations('search')
     
     # ==================== Mode Control ====================
@@ -508,16 +617,23 @@ class CodeEditor(QPlainTextEdit):
                     self.add_decoration(line_number, hover_color, 'hover')
                 self._last_hover_line = line_number
     
-    def leaveEvent(self, event) -> None:
+    def leaveEvent(self, event: QEvent) -> None:
         """Handle mouse leave events."""
         super().leaveEvent(event)
         if self._hover_enabled:
             self.clear_decorations('hover')
             self._last_hover_line = -1
     
-    def keyPressEvent(self, event) -> None:
+    def keyPressEvent(self, event: QKeyEvent) -> None:
         """Handle key press events for smart copy/cut/paste."""
         from PyQt5.QtCore import Qt
+        
+        # CRITICAL FIX: Prevent Tab from adding '\t' when search popup is open
+        # Tab should navigate within popup, not insert text in editor
+        if self._search_popup and self._search_popup.isVisible():
+            if event.key() == Qt.Key_Tab or event.key() == Qt.Key_Backtab:
+                # Ignore Tab - let popup handle focus navigation
+                return
         
         # Handle Ctrl+C when no selection - copy current line
         if event.key() == Qt.Key_C and event.modifiers() == Qt.ControlModifier:
@@ -1083,20 +1199,3 @@ class CodeEditor(QPlainTextEdit):
             line_number: Line number (1-based)
         """
         self._actions.jump_to_line(line_number)
-    
-    def copy_line(self) -> None:
-        """
-        Copy the current line to clipboard if no selection.
-        
-        If there's a selection, use Qt's native copy (Ctrl+C).
-        """
-        self._actions.copy_line()
-    
-    def cut_line(self) -> None:
-        """
-        Cut the current line to clipboard if no selection.
-        
-        If there's a selection, use Qt's native cut (Ctrl+X).
-        """
-        if not self.isReadOnly():
-            self._actions.cut_line()

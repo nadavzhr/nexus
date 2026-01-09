@@ -11,10 +11,36 @@ from PyQt5.QtGui import QPaintEvent
 
 class LineNumberArea(QWidget):
     """
-    Widget that displays line numbers alongside the code editor.
+    Line number gutter widget - self-contained and reusable.
     
-    This widget is docked to the left of the CodeEditor and updates
-    automatically when the editor scrolls or the content changes.
+    A widget that displays line numbers alongside a code editor.
+    Automatically updates when the editor scrolls or content changes.
+    
+    The widget is designed to be docked to the left side of a QPlainTextEdit
+    and uses the parent editor's theme settings for coloring.
+    
+    Features:
+    - Auto-sizing based on number of lines (width adjusts dynamically)
+    - Theme-aware coloring (uses editor's theme for background and text)
+    - Efficient painting (only paints visible line numbers)
+    - Right-aligned line numbers with padding
+    
+    Usage:
+        This widget is typically created and managed by the CodeEditor.
+        It can also be used standalone with any QPlainTextEdit:
+        
+        ```python
+        editor = QPlainTextEdit()
+        line_area = LineNumberArea(editor)
+        # Position it in the editor's layout
+        # Connect to editor's signals for updates
+        ```
+    
+    Note:
+        The widget expects the parent editor to have:
+        - _line_number_area_width() method
+        - get_current_theme() method
+        - blockBoundingGeometry(), contentOffset(), blockBoundingRect() methods
     """
     
     def __init__(self, editor):

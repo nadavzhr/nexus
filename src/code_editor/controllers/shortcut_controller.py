@@ -6,69 +6,8 @@ or programmatically via the public API.
 """
 
 from typing import Optional
-from PyQt5.QtGui import QTextCursor, QKeySequence
+from PyQt5.QtGui import QTextCursor
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton
-
-
-class GoToLineDialog(QDialog):
-    """Dialog for jumping to a specific line number."""
-    
-    def __init__(self, max_line: int, current_line: int, parent=None):
-        """
-        Initialize the go to line dialog.
-        
-        Args:
-            max_line: Maximum line number
-            current_line: Current line number (1-based)
-            parent: Parent widget
-        """
-        super().__init__(parent)
-        self.setWindowTitle("Go to Line")
-        self.setModal(True)
-        self._line_number = current_line
-        
-        layout = QVBoxLayout(self)
-        
-        # Input row
-        input_layout = QHBoxLayout()
-        input_layout.addWidget(QLabel("Line number:"))
-        
-        self.line_input = QLineEdit()
-        self.line_input.setText(str(current_line))
-        self.line_input.selectAll()
-        self.line_input.returnPressed.connect(self.accept)
-        input_layout.addWidget(self.line_input)
-        
-        layout.addLayout(input_layout)
-        
-        # Info label
-        self.info_label = QLabel(f"(1 - {max_line})")
-        layout.addWidget(self.info_label)
-        
-        # Buttons
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-        
-        ok_btn = QPushButton("Go")
-        ok_btn.clicked.connect(self.accept)
-        ok_btn.setDefault(True)
-        button_layout.addWidget(ok_btn)
-        
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.clicked.connect(self.reject)
-        button_layout.addWidget(cancel_btn)
-        
-        layout.addLayout(button_layout)
-        
-        self.setFixedSize(300, 120)
-    
-    def get_line_number(self) -> Optional[int]:
-        """Get the entered line number (1-based) or None if invalid."""
-        try:
-            return int(self.line_input.text())
-        except ValueError:
-            return None
 
 
 class EditorActions:
@@ -264,18 +203,6 @@ class EditorActions:
         
         cursor.endEditBlock()
         self.editor.setTextCursor(cursor)
-    
-    def go_to_line(self) -> None:
-        """Show dialog and jump to a specific line."""
-        cursor = self.editor.textCursor()
-        current_line = cursor.blockNumber() + 1
-        max_line = self.editor.document().blockCount()
-        
-        dialog = GoToLineDialog(max_line, current_line, self.editor)
-        if dialog.exec_():
-            line_num = dialog.get_line_number()
-            if line_num and 1 <= line_num <= max_line:
-                self.jump_to_line(line_num)
     
     def jump_to_line(self, line_number: int) -> None:
         """
