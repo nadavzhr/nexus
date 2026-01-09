@@ -184,6 +184,10 @@ class EditorActions:
             text = block.text()
             cursor.movePosition(QTextCursor.EndOfBlock)
             cursor.insertText('\n' + text)
+        
+        self.editor.setTextCursor(cursor)
+        # Fix: Ensure duplicated content is visible in viewport
+        self.editor.ensureCursorVisible()
     
     def move_line_up(self) -> None:
         """Move the current line up."""
@@ -280,15 +284,24 @@ class EditorActions:
         Args:
             line_number: Line number (1-based)
         """
+        max_line = self.editor.document().blockCount()
+        
+        # Fix: Clamp to valid range - gracefully handle out-of-bounds
+        if line_number > max_line:
+            line_number = max_line  # Navigate to last line
+        elif line_number < 1:
+            line_number = 1  # Navigate to first line
+        
         # Convert to 0-based
         line_num = line_number - 1
         
-        if 0 <= line_num < self.editor.document().blockCount():
-            block = self.editor.document().findBlockByNumber(line_num)
+        # Navigate to the (clamped) line
+        block = self.editor.document().findBlockByNumber(line_num)
+        if block.isValid():
             cursor = QTextCursor(block)
             cursor.movePosition(QTextCursor.EndOfBlock)
             self.editor.setTextCursor(cursor)
-            self.editor.centerCursor()
+            self.editor.centerCursor()  # Center line in viewport
     
     def _get_comment_char(self) -> str:
         """
@@ -370,7 +383,17 @@ class EditorActions:
             # Mark this as a line copy (store in editor for paste detection)
             self.editor._last_copy_was_line = True
             
-            # Delete the line
-            cursor.select(QTextCursor.LineUnderCursor)
+            # Delete the current block
+            cursor.select(QTextCursor.BlockUnderCursor)
             cursor.removeSelectedText()
-            cursor.deleteChar()  # Delete the newline
+            
+            # Fix: Handle last line case
+            if cursor.atEnd() and cursor.blockNumber() > 0:
+                # Was the last line - move to previous line
+                cursor.deletePreviousChar()  # Remove extra newline
+                cursor.movePosition(QTextCursor.StartOfBlock)
+            else:
+                # Not last line - remove newline after deleted line
+                cursor.deleteChar()
+            
+            self.editor.setTextCursor(cursor)

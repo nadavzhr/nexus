@@ -639,7 +639,8 @@ class CodeEditor(QPlainTextEdit):
     # ==================== Enhanced Search with Popup ====================
     
     def show_search_popup(self) -> None:
-        """Show the search popup widget."""
+        """Show the search popup widget (singleton - reuses existing instance)."""
+        # Create once, reuse forever (singleton pattern)
         if not self._search_popup:
             self._search_popup = SearchPopup(self)
             self._search_popup.searchRequested.connect(self._on_search_requested)
@@ -659,6 +660,7 @@ class CodeEditor(QPlainTextEdit):
         if last_pattern:
             self._search_popup.set_pattern(last_pattern)
         
+        # Show existing instance (don't recreate)
         self._search_popup.show_popup()
     
     def _on_search_requested(self, pattern: str, case_sensitive: bool,
