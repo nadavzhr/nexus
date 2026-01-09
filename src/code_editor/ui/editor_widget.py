@@ -21,6 +21,7 @@ from ..highlighting.highlighter import PygmentsHighlighter
 from ..highlighting.theme import ThemeManager, Theme
 from ..services.decoration_service import DecorationService, DecorationLayer
 from ..services.search_service import SearchService
+from ..services.language_service import LanguageService
 from ..controllers.shortcut_controller import EditorActions
 from ..models.line_data import LineData
 
@@ -163,6 +164,7 @@ class CodeEditor(QPlainTextEdit):
     Services are accessible through properties and can be extended/replaced:
     - self._decoration_service: DecorationService instance
     - self._search_service: SearchService instance
+    - self._language_service: LanguageService instance
     - self._theme_manager: ThemeManager instance
     - self._actions: EditorActions controller
     
@@ -192,51 +194,33 @@ class CodeEditor(QPlainTextEdit):
         """
         super().__init__(parent)
         
-        # Initialize components
+        # Core components
         self._line_number_area = LineNumberArea(self)
         self._highlighter: Optional[PygmentsHighlighter] = None
-        self._languages: Dict[str, Any] = {}
-        self._current_language: Optional[str] = None
         
-        # Theme management
+        # Services (business logic)
         self._theme_manager = ThemeManager()
-        
-        # Search components
+        self._language_service = LanguageService()
         self._search_service = SearchService(self.document())
-        self._search_popup: Optional[SearchPopup] = None
-        
-        # Goto line overlay
-        self._goto_line_overlay: Optional[GotoLineOverlay] = None
-        
-        # Editor actions
-        self._actions = EditorActions(self)
-        
-        # Decoration service (centralized decoration management - fixes highlighting bugs)
         self._decoration_service = DecorationService(self)
         
-        # Keep legacy dict for backward compatibility during transition
-        self._decorations: Dict[str, List[QTextEdit.ExtraSelection]] = {}
+        # Controllers
+        self._actions = EditorActions(self)
         
-        # Search state (legacy - kept for compatibility)
-        self._search_pattern: Optional[str] = None
-        self._search_regex: bool = False
+        # UI overlays (lazy initialization)
+        self._search_popup: Optional[SearchPopup] = None
+        self._goto_line_overlay: Optional[GotoLineOverlay] = None
         
-        # Hover state
+        # State
         self._hover_enabled: bool = True
         self._last_hover_line: int = -1
-        
-        # Current line highlighting
         self._current_line_highlight_enabled: bool = True
-        
-        # Track if last copy/cut was a full line (for VS Code-style paste)
         self._last_copy_was_line: bool = False
         
-        # Setup UI
+        # Setup
         self._setup_ui()
         self._connect_signals()
         self._setup_shortcuts()
-        
-        # Apply initial theme
         self._apply_theme()
     
     # ==================== Qt Properties (for Qt Designer / QML integration) ====================
@@ -248,7 +232,7 @@ class CodeEditor(QPlainTextEdit):
         
         Allows accessing/setting the language in Qt Designer and QML.
         """
-        return self._current_language or ""
+        return self._language_service.get_current_language() or ""
     
     @currentLanguage.setter
     def currentLanguage(self, name: str) -> None:
@@ -441,10 +425,7 @@ class CodeEditor(QPlainTextEdit):
             lexer: Pygments lexer instance or class
             file_extensions: Optional list of file extensions (e.g., ['.py', '.pyw'])
         """
-        self._languages[name] = {
-            'lexer': lexer,
-            'extensions': file_extensions or []
-        }
+        self._language_service.register_language(name, lexer)
     
     def set_language(self, name: str) -> bool:
         """
@@ -456,11 +437,10 @@ class CodeEditor(QPlainTextEdit):
         Returns:
             True if successful, False if language not found
         """
-        if name not in self._languages:
+        if not self._language_service.has_language(name):
             return False
         
-        lang_info = self._languages[name]
-        lexer = lang_info['lexer']
+        lexer = self._language_service.get_lexer(name)
         
         # Create or update highlighter
         if self._highlighter:
@@ -468,19 +448,19 @@ class CodeEditor(QPlainTextEdit):
         else:
             self._highlighter = PygmentsHighlighter(self.document(), lexer)
         
-        self._current_language = name
+        self._language_service.set_current_language(name)
         return True
     
     def get_current_language(self) -> Optional[str]:
         """Get the name of the currently active language."""
-        return self._current_language
+        return self._language_service.get_current_language()
     
     def disable_highlighting(self) -> None:
         """Disable syntax highlighting."""
         if self._highlighter:
             self._highlighter.setDocument(None)
             self._highlighter = None
-        self._current_language = None
+        self._language_service.clear()
     
     # ==================== Decoration API ====================
     
@@ -543,7 +523,9 @@ class CodeEditor(QPlainTextEdit):
     
     def search(self, pattern: str, regex: bool = False) -> int:
         """
-        Search for a pattern and highlight all matches (using DecorationService).
+        Search for a pattern and highlight all matches.
+        
+        Delegates to SearchService for logic, uses DecorationService for display.
         
         Args:
             pattern: Search pattern
@@ -552,43 +534,29 @@ class CodeEditor(QPlainTextEdit):
         Returns:
             Number of matches found
         """
-        self._search_pattern = pattern
-        self._search_regex = regex
+        # Delegate search logic to service
+        count = self._search_service.search(pattern, case_sensitive=False, 
+                                           use_regex=regex, whole_word=False)
+        
+        # Clear previous highlights
         self._decoration_service.clear_layer(DecorationLayer.SEARCH_MATCHES)
         
-        if not pattern:
-            self._decoration_service.apply()
-            return 0
-        
-        # Find all matches
-        matches = 0
-        cursor = QTextCursor(self.document())
-        highlight_color = QColor(Qt.yellow)
-        
-        flags = QTextDocument.FindFlags()
-        if regex:
-            # For regex support, we'd need to use QRegExp or QRegularExpression
-            # For now, use plain text
-            pass
-        
-        while True:
-            cursor = self.document().find(pattern, cursor, flags)
-            if cursor.isNull():
-                break
-            
-            self._decoration_service.add_decoration(
-                DecorationLayer.SEARCH_MATCHES,
-                cursor,
-                highlight_color
-            )
-            matches += 1
+        if count > 0:
+            # Highlight matches
+            theme = self._theme_manager.get_current_theme()
+            for match in self._search_service.get_matches():
+                self._decoration_service.add_decoration(
+                    DecorationLayer.SEARCH_MATCHES,
+                    match.cursor,
+                    theme.search_match
+                )
         
         self._decoration_service.apply()
-        return matches
+        return count
     
     def clear_search(self) -> None:
         """Clear search highlighting."""
-        self._search_pattern = None
+        self._search_service.clear()
         self.clear_decorations('search')
     
     # ==================== Mode Control ====================
