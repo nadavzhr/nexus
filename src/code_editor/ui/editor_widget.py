@@ -726,12 +726,13 @@ class CodeEditor(QPlainTextEdit):
     def _on_search_requested(self, pattern: str, case_sensitive: bool,
                              use_regex: bool, whole_word: bool) -> None:
         """Handle search request from popup (using DecorationService)."""
-        # If pattern is empty, clear search service and update UI
+        # If pattern is empty, clear highlights and save empty pattern as last search
         if not pattern:
             # Clear previous highlights
             self._decoration_service.clear_layer(DecorationLayer.SEARCH_MATCHES)
             self._decoration_service.clear_layer(DecorationLayer.CURRENT_MATCH)
-            self._search_service.clear()  # Clear the matches from the service
+            # Save empty pattern as the last search (empty IS a valid pattern)
+            self._search_service.search("", case_sensitive, use_regex, whole_word)
             self._decoration_service.apply()
             if self._search_popup:
                 self._search_popup.update_match_count(0, 0)
