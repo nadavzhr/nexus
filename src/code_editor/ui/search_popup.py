@@ -311,6 +311,15 @@ class SearchPopup(QWidget):
         if self._last_pattern:
             self.search_input.setText(self._last_pattern)
             # Don't trigger search on restore, it will trigger via textChanged
+        
+        # Reset replace mode to hidden when showing popup
+        # User can toggle it with Ctrl+H if needed
+        if self._replace_mode:
+            self._replace_mode = False
+            self.replace_widget.setVisible(False)
+            self.toggle_replace_btn.setText("▶")
+            self.adjustSize()
+        
         self.show()
         self.raise_()  # Bring to front
         self.activateWindow()  # Activate window
@@ -440,20 +449,14 @@ class SearchPopup(QWidget):
         # Intercept Tab and Shift+Tab to keep navigation within the popup
         if event.type() == QEvent.KeyPress:
             key_event = event
-            if key_event.key() == Qt.Key_Tab or key_event.key() == Qt.Key_Backtab:
-                # Handle tab navigation within this widget
-                # Don't let it propagate to parent editor
-                if key_event.key() == Qt.Key_Tab:
-                    self.focusNextChild()
-                else:  # Shift+Tab (Backtab)
-                    self.focusPreviousChild()
+            if key_event.key() == Qt.Key_Tab:
+                # Tab - move to next widget
+                self.focusNextChild()
+                return True  # Event handled, don't propagate
+            elif key_event.key() == Qt.Key_Backtab:
+                # Shift+Tab - move to previous widget
+                self.focusPreviousChild()
                 return True  # Event handled, don't propagate
         
         # For all other events, use default handling
         return super().event(event)
-    
-    def focusInEvent(self, event) -> None:
-        """Handle focus in event to ensure proper keyboard event handling."""
-        super().focusInEvent(event)
-        # Ensure the popup widget itself can receive keyboard events
-        self.setFocus(Qt.OtherFocusReason)
