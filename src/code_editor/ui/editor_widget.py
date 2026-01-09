@@ -1180,20 +1180,3 @@ class CodeEditor(QPlainTextEdit):
             line_number: Line number (1-based)
         """
         self._actions.jump_to_line(line_number)
-    
-    def copy_line(self) -> None:
-        """
-        Copy the current line to clipboard if no selection.
-        
-        If there's a selection, use Qt's native copy (Ctrl+C).
-        """
-        self._actions.copy_line()
-    
-    def cut_line(self) -> None:
-        """
-        Cut the current line to clipboard if no selection.
-        
-        If there's a selection, use Qt's native cut (Ctrl+X).
-        """
-        if not self.isReadOnly():
-            self._actions.cut_line()
