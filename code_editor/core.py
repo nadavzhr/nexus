@@ -19,6 +19,7 @@ from .theme import ThemeManager, Theme
 from .search import SearchService, SearchPopup
 from .shortcuts import EditorActions
 from .goto_line_overlay import GotoLineOverlay
+from .services.decoration_service import DecorationService, DecorationLayer
 
 
 class LineData(QTextBlockUserData):
@@ -108,14 +109,11 @@ class CodeEditor(QPlainTextEdit):
         # Editor actions
         self._actions = EditorActions(self)
         
-        # Decoration tracking
-        self._decorations: Dict[str, List[QTextEdit.ExtraSelection]] = {
-            'search': [],
-            'current_match': [],
-            'current_line': [],
-            'hover': [],
-            'custom': []
-        }
+        # Decoration service (centralized decoration management - fixes highlighting bugs)
+        self._decoration_service = DecorationService(self)
+        
+        # Keep legacy dict for backward compatibility during transition
+        self._decorations: Dict[str, List[QTextEdit.ExtraSelection]] = {}
         
         # Search state (legacy - kept for compatibility)
         self._search_pattern: Optional[str] = None
@@ -342,42 +340,50 @@ class CodeEditor(QPlainTextEdit):
         
         selection = QTextEdit.ExtraSelection()
         selection.format.setBackground(bg_color)
-        selection.format.setProperty(QTextFormat.FullWidthSelection, True)
-        selection.cursor = QTextCursor(block)
-        selection.cursor.clearSelection()
-        
-        if decoration_type not in self._decorations:
-            self._decorations[decoration_type] = []
-        
-        self._decorations[decoration_type].append(selection)
-        self._apply_decorations()
+        # Use DecorationService for better management
+        cursor = QTextCursor(block)
+        self._decoration_service.add_decoration(
+            DecorationLayer.CUSTOM,
+            cursor,
+            color,
+            full_width=True
+        )
+        self._decoration_service.apply()
     
     def clear_decorations(self, decoration_type: Optional[str] = None) -> None:
         """
-        Clear decorations.
+        Clear decorations (now uses DecorationService).
         
         Args:
-            decoration_type: Type to clear, or None to clear all
+            decoration_type: Type to clear ('search', 'current_match', 'current_line', 'custom')
+                           or None to clear all
         """
+        # Map old types to new layers
+        type_to_layer = {
+            'search': DecorationLayer.SEARCH_MATCHES,
+            'current_match': DecorationLayer.CURRENT_MATCH,
+            'current_line': DecorationLayer.CURRENT_LINE,
+            'custom': DecorationLayer.CUSTOM
+        }
+        
         if decoration_type:
-            self._decorations[decoration_type] = []
+            if decoration_type in type_to_layer:
+                self._decoration_service.clear_layer(type_to_layer[decoration_type])
         else:
-            for key in self._decorations:
-                self._decorations[key] = []
-        self._apply_decorations()
+            # Clear all layers
+            self._decoration_service.clear_all()
+        
+        self._decoration_service.apply()
     
     def _apply_decorations(self) -> None:
-        """Apply all decorations to the editor."""
-        all_selections = []
-        for selections in self._decorations.values():
-            all_selections.extend(selections)
-        self.setExtraSelections(all_selections)
+        """Apply all decorations to the editor (now uses DecorationService)."""
+        self._decoration_service.apply()
     
     # ==================== Search API ====================
     
     def search(self, pattern: str, regex: bool = False) -> int:
         """
-        Search for a pattern and highlight all matches.
+        Search for a pattern and highlight all matches (using DecorationService).
         
         Args:
             pattern: Search pattern
@@ -388,9 +394,10 @@ class CodeEditor(QPlainTextEdit):
         """
         self._search_pattern = pattern
         self._search_regex = regex
-        self.clear_decorations('search')
+        self._decoration_service.clear_layer(DecorationLayer.SEARCH_MATCHES)
         
         if not pattern:
+            self._decoration_service.apply()
             return 0
         
         # Find all matches
@@ -409,13 +416,14 @@ class CodeEditor(QPlainTextEdit):
             if cursor.isNull():
                 break
             
-            selection = QTextEdit.ExtraSelection()
-            selection.format.setBackground(highlight_color)
-            selection.cursor = cursor
-            self._decorations['search'].append(selection)
+            self._decoration_service.add_decoration(
+                DecorationLayer.SEARCH_MATCHES,
+                cursor,
+                highlight_color
+            )
             matches += 1
         
-        self._apply_decorations()
+        self._decoration_service.apply()
         return matches
     
     def clear_search(self) -> None:
@@ -593,21 +601,20 @@ class CodeEditor(QPlainTextEdit):
     # ==================== Current Line Highlighting ====================
     
     def _highlight_current_line(self) -> None:
-        """Highlight the current line."""
-        self.clear_decorations('current_line')
+        """Highlight the current line (using DecorationService)."""
+        self._decoration_service.clear_layer(DecorationLayer.CURRENT_LINE)
         
-        if not self.isReadOnly():
+        if not self.isReadOnly() and self._current_line_highlight_enabled:
             cursor = self.textCursor()
             theme = self._theme_manager.get_current_theme()
             
-            selection = QTextEdit.ExtraSelection()
-            selection.format.setBackground(theme.current_line)
-            selection.format.setProperty(QTextFormat.FullWidthSelection, True)
-            selection.cursor = cursor
-            selection.cursor.clearSelection()
-            
-            self._decorations['current_line'].append(selection)
-            self._apply_decorations()
+            self._decoration_service.add_decoration(
+                DecorationLayer.CURRENT_LINE,
+                cursor,
+                theme.current_line_bg,
+                full_width=True
+            )
+            self._decoration_service.apply()
     
     def set_current_line_highlight_enabled(self, enabled: bool) -> None:
         """
@@ -649,13 +656,14 @@ class CodeEditor(QPlainTextEdit):
     
     def _on_search_requested(self, pattern: str, case_sensitive: bool,
                              use_regex: bool, whole_word: bool) -> None:
-        """Handle search request from popup."""
+        """Handle search request from popup (using DecorationService)."""
         # Clear previous highlights first (always clear when pattern changes)
-        self.clear_decorations('search')
-        self.clear_decorations('current_match')
+        self._decoration_service.clear_layer(DecorationLayer.SEARCH_MATCHES)
+        self._decoration_service.clear_layer(DecorationLayer.CURRENT_MATCH)
         
         # If pattern is empty, just clear and update UI
         if not pattern:
+            self._decoration_service.apply()
             if self._search_popup:
                 self._search_popup.update_match_count(0, 0)
             return
@@ -664,27 +672,30 @@ class CodeEditor(QPlainTextEdit):
         count = self._search_service.search(pattern, case_sensitive, use_regex, whole_word)
         
         if count > 0:
-            # Highlight all matches
+            # Highlight all matches using DecorationService
             theme = self._theme_manager.get_current_theme()
             for match in self._search_service.get_matches():
-                selection = QTextEdit.ExtraSelection()
-                selection.format.setBackground(theme.search_match)
-                selection.cursor = match.cursor
-                self._decorations['search'].append(selection)
+                self._decoration_service.add_decoration(
+                    DecorationLayer.SEARCH_MATCHES,
+                    match.cursor,
+                    theme.search_match
+                )
             
-            # Highlight current match distinctly
+            # Highlight current match distinctly (top layer)
             current_match = self._search_service.get_current_match()
             if current_match:
-                selection = QTextEdit.ExtraSelection()
-                selection.format.setBackground(theme.current_match)
-                selection.cursor = current_match.cursor
-                self._decorations['current_match'].append(selection)
+                self._decoration_service.add_decoration(
+                    DecorationLayer.CURRENT_MATCH,
+                    current_match.cursor,
+                    theme.current_match
+                )
                 
                 # Move editor to current match
                 self.setTextCursor(current_match.cursor)
                 self.centerCursor()
             
-            self._apply_decorations()
+            # Apply all decorations atomically
+            self._decoration_service.apply()
             
             # Update match count in popup
             if self._search_popup:
@@ -692,6 +703,7 @@ class CodeEditor(QPlainTextEdit):
                 self._search_popup.update_match_count(current_idx, count)
         else:
             # No matches found - show "No results"
+            self._decoration_service.apply()
             if self._search_popup:
                 self._search_popup.update_match_count(0, 0)
     
@@ -708,18 +720,20 @@ class CodeEditor(QPlainTextEdit):
             self._update_current_match(match)
     
     def _update_current_match(self, match) -> None:
-        """Update highlighting for current match."""
-        # Clear current match highlighting
-        self.clear_decorations('current_match')
+        """Update highlighting for current match (using DecorationService)."""
+        # Clear current match highlighting layer
+        self._decoration_service.clear_layer(DecorationLayer.CURRENT_MATCH)
         
-        # Highlight new current match
+        # Highlight new current match on top layer
         theme = self._theme_manager.get_current_theme()
-        selection = QTextEdit.ExtraSelection()
-        selection.format.setBackground(theme.current_match)
-        selection.cursor = match.cursor
-        self._decorations['current_match'].append(selection)
+        self._decoration_service.add_decoration(
+            DecorationLayer.CURRENT_MATCH,
+            match.cursor,
+            theme.current_match
+        )
         
-        self._apply_decorations()
+        # Apply changes atomically
+        self._decoration_service.apply()
         
         # Move editor to match
         self.setTextCursor(match.cursor)
@@ -732,11 +746,11 @@ class CodeEditor(QPlainTextEdit):
             self._search_popup.update_match_count(current_idx, len(matches))
     
     def _on_search_closed(self) -> None:
-        """Handle search popup close."""
-        # Clear all search highlights when closing
-        self.clear_decorations('search')
-        self.clear_decorations('current_match')
-        self._apply_decorations()
+        """Handle search popup close (using DecorationService)."""
+        # Clear all search highlights atomically when closing
+        self._decoration_service.clear_layer(DecorationLayer.SEARCH_MATCHES)
+        self._decoration_service.clear_layer(DecorationLayer.CURRENT_MATCH)
+        self._decoration_service.apply()
         
         # Hide the popup
         if self._search_popup:
