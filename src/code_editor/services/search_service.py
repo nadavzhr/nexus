@@ -200,3 +200,75 @@ class SearchService:
         self._matches.clear()
         self._current_index = -1
         self._search_performed = False
+    
+    def replace_current(self, replacement: str) -> bool:
+        """
+        Replace the current match with the replacement text.
+        
+        Args:
+            replacement: Text to replace the current match with
+            
+        Returns:
+            True if replacement was successful, False otherwise
+        """
+        if not self._matches or self._current_index < 0:
+            return False
+        
+        current_match = self.get_current_match()
+        if not current_match:
+            return False
+        
+        # Get the cursor for the current match
+        cursor = QTextCursor(current_match.cursor)
+        
+        # Replace the selected text
+        cursor.beginEditBlock()
+        cursor.setPosition(current_match.start)
+        cursor.setPosition(current_match.end, QTextCursor.KeepAnchor)
+        cursor.insertText(replacement)
+        cursor.endEditBlock()
+        
+        # Remove this match from the list and adjust index
+        self._matches.pop(self._current_index)
+        
+        # Adjust current index
+        if self._current_index >= len(self._matches):
+            self._current_index = len(self._matches) - 1
+        
+        return True
+    
+    def replace_all(self, replacement: str) -> int:
+        """
+        Replace all matches with the replacement text.
+        
+        Args:
+            replacement: Text to replace all matches with
+            
+        Returns:
+            Number of replacements made
+        """
+        if not self._matches:
+            return 0
+        
+        count = 0
+        
+        # Sort matches in reverse order by position to avoid offset issues
+        sorted_matches = sorted(self._matches, key=lambda m: m.start, reverse=True)
+        
+        # Perform replacements from end to start
+        cursor = QTextCursor(self.document)
+        cursor.beginEditBlock()
+        
+        for match in sorted_matches:
+            cursor.setPosition(match.start)
+            cursor.setPosition(match.end, QTextCursor.KeepAnchor)
+            cursor.insertText(replacement)
+            count += 1
+        
+        cursor.endEditBlock()
+        
+        # Clear all matches since they're replaced
+        self._matches.clear()
+        self._current_index = -1
+        
+        return count

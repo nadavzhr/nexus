@@ -24,6 +24,8 @@ class SearchPopup(QWidget):
     nextRequested = pyqtSignal()
     previousRequested = pyqtSignal()
     closeRequested = pyqtSignal()
+    replaceRequested = pyqtSignal(str)  # replacement_text
+    replaceAllRequested = pyqtSignal(str)  # replacement_text
     
     def __init__(self, parent: Optional[QWidget] = None):
         """
@@ -35,6 +37,7 @@ class SearchPopup(QWidget):
         super().__init__(parent)
         self._setup_ui()
         self._last_pattern = ""
+        self._replace_mode = False  # Track if replace UI is shown
         
         # Make it a floating widget
         self.setWindowFlags(Qt.Widget)
@@ -48,6 +51,13 @@ class SearchPopup(QWidget):
         
         # First row: search input and buttons
         search_row = QHBoxLayout()
+        
+        # Toggle replace button
+        self.toggle_replace_btn = QPushButton("▶")
+        self.toggle_replace_btn.setMaximumWidth(25)
+        self.toggle_replace_btn.setToolTip("Toggle Replace (Ctrl+H)")
+        self.toggle_replace_btn.clicked.connect(self._toggle_replace_mode)
+        search_row.addWidget(self.toggle_replace_btn)
         
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Find...")
@@ -86,7 +96,39 @@ class SearchPopup(QWidget):
         
         layout.addLayout(search_row)
         
-        # Second row: options
+        # Replace row (initially hidden)
+        self.replace_row = QHBoxLayout()
+        
+        # Spacer to align with search input (for toggle button width)
+        spacer = QLabel("")
+        spacer.setMaximumWidth(25)
+        self.replace_row.addWidget(spacer)
+        
+        self.replace_input = QLineEdit()
+        self.replace_input.setPlaceholderText("Replace...")
+        self.replace_input.setMinimumWidth(200)
+        self.replace_input.installEventFilter(self)
+        self.replace_row.addWidget(self.replace_input)
+        
+        # Replace button
+        self.replace_btn = QPushButton("Replace")
+        self.replace_btn.setToolTip("Replace current match (Ctrl+Shift+1)")
+        self.replace_btn.clicked.connect(self._on_replace)
+        self.replace_row.addWidget(self.replace_btn)
+        
+        # Replace All button
+        self.replace_all_btn = QPushButton("Replace All")
+        self.replace_all_btn.setToolTip("Replace all matches (Ctrl+Alt+Enter)")
+        self.replace_all_btn.clicked.connect(self._on_replace_all)
+        self.replace_row.addWidget(self.replace_all_btn)
+        
+        # Create widget container for replace row so we can show/hide it
+        self.replace_widget = QWidget()
+        self.replace_widget.setLayout(self.replace_row)
+        self.replace_widget.setVisible(False)  # Hidden by default
+        layout.addWidget(self.replace_widget)
+        
+        # Third row: options
         options_row = QHBoxLayout()
         
         self.case_checkbox = QCheckBox("Case (Aa)")
@@ -142,6 +184,30 @@ class SearchPopup(QWidget):
             self.whole_word_checkbox.isChecked()
         )
     
+    def _toggle_replace_mode(self) -> None:
+        """Toggle the replace UI visibility."""
+        self._replace_mode = not self._replace_mode
+        self.replace_widget.setVisible(self._replace_mode)
+        
+        # Update toggle button icon
+        if self._replace_mode:
+            self.toggle_replace_btn.setText("▼")
+        else:
+            self.toggle_replace_btn.setText("▶")
+        
+        # Adjust popup size
+        self.adjustSize()
+    
+    def _on_replace(self) -> None:
+        """Handle replace current match request."""
+        replacement = self.replace_input.text()
+        self.replaceRequested.emit(replacement)
+    
+    def _on_replace_all(self) -> None:
+        """Handle replace all matches request."""
+        replacement = self.replace_input.text()
+        self.replaceAllRequested.emit(replacement)
+    
     def set_pattern(self, pattern: str) -> None:
         """Set the search pattern."""
         self.search_input.setText(pattern)
@@ -174,6 +240,18 @@ class SearchPopup(QWidget):
     def set_whole_word(self, value: bool) -> None:
         """Set the whole word matching state."""
         self.whole_word_checkbox.setChecked(value)
+    
+    def get_replace_text(self) -> str:
+        """Get the current replacement text."""
+        return self.replace_input.text()
+    
+    def set_replace_text(self, text: str) -> None:
+        """Set the replacement text."""
+        self.replace_input.setText(text)
+    
+    def is_replace_mode(self) -> bool:
+        """Check if replace mode is active."""
+        return self._replace_mode
     
     def update_match_count(self, current: int, total: int) -> None:
         """
@@ -215,13 +293,18 @@ class SearchPopup(QWidget):
         """Filter events for child widgets to handle shortcuts.
         
         This is necessary because keyboard shortcuts need to work even when
-        the search_input has focus.
+        the search_input or replace_input has focus.
         """
         # Don't process events if popup is hidden
         if not self.isVisible():
             return super().eventFilter(obj, event)
         
-        if obj == self.search_input and event.type() == event.KeyPress:
+        if obj in (self.search_input, self.replace_input) and event.type() == event.KeyPress:
+            # Handle Ctrl+H - Toggle replace mode
+            if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_H:
+                self._toggle_replace_mode()
+                return True
+            
             # Handle Alt+C, Alt+R, Alt+W shortcuts
             if event.modifiers() == Qt.AltModifier:
                 if event.key() == Qt.Key_C:
@@ -234,16 +317,26 @@ class SearchPopup(QWidget):
                     self.whole_word_checkbox.setChecked(not self.whole_word_checkbox.isChecked())
                     return True
             
-            # Handle Enter/Shift+Enter
-            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            # Handle Enter/Shift+Enter in search input
+            if obj == self.search_input and event.key() in (Qt.Key_Return, Qt.Key_Enter):
                 if event.modifiers() == Qt.ShiftModifier:
                     self.previousRequested.emit()
                 else:
                     self.nextRequested.emit()
                 return True
             
+            # Handle Enter in replace input - perform replace
+            if obj == self.replace_input and event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                if event.modifiers() == (Qt.ControlModifier | Qt.AltModifier):
+                    # Ctrl+Alt+Enter - Replace all
+                    self._on_replace_all()
+                else:
+                    # Enter - Replace current
+                    self._on_replace()
+                return True
+            
             # Handle Escape
-            elif event.key() == Qt.Key_Escape:
+            if event.key() == Qt.Key_Escape:
                 self.closeRequested.emit()
                 return True
         

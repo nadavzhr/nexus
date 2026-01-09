@@ -659,6 +659,8 @@ class CodeEditor(QPlainTextEdit):
             self._search_popup.nextRequested.connect(self._on_next_match)
             self._search_popup.previousRequested.connect(self._on_previous_match)
             self._search_popup.closeRequested.connect(self._on_search_closed)
+            self._search_popup.replaceRequested.connect(self._on_replace_current)
+            self._search_popup.replaceAllRequested.connect(self._on_replace_all)
         
         # Position popup at top-right corner
         popup_width = self._search_popup.sizeHint().width()
@@ -854,6 +856,80 @@ class CodeEditor(QPlainTextEdit):
             self._search_popup.clearFocus()  # Clear focus from popup
         
         # Return focus to the editor
+        self.setFocus()
+    
+    def _on_replace_current(self, replacement: str) -> None:
+        """Handle replace current match request."""
+        if self.isReadOnly():
+            return
+        
+        # Replace the current match
+        success = self._search_service.replace_current(replacement)
+        
+        if success:
+            # Re-perform search to update matches (positions changed after replacement)
+            pattern = self._search_service.get_last_pattern()
+            case_sensitive = self._search_service.get_last_case_sensitive()
+            use_regex = self._search_service.get_last_use_regex()
+            whole_word = self._search_service.get_last_whole_word()
+            
+            # Re-search to get updated matches
+            count = self._search_service.search(pattern, case_sensitive, use_regex, whole_word)
+            
+            # Update highlights
+            self._decoration_service.clear_layer(DecorationLayer.SEARCH_MATCHES)
+            self._decoration_service.clear_layer(DecorationLayer.CURRENT_MATCH)
+            
+            if count > 0:
+                theme = self._theme_manager.get_current_theme()
+                for match in self._search_service.get_matches():
+                    self._decoration_service.add_decoration(
+                        DecorationLayer.SEARCH_MATCHES,
+                        match.cursor,
+                        theme.search_match
+                    )
+                
+                # Highlight current match
+                current_match = self._search_service.get_current_match()
+                if current_match:
+                    self._decoration_service.add_decoration(
+                        DecorationLayer.CURRENT_MATCH,
+                        current_match.cursor,
+                        theme.current_match
+                    )
+                    self.setTextCursor(current_match.cursor)
+                    self.centerCursor()
+                
+                # Update popup
+                if self._search_popup:
+                    current_idx = self._search_service.get_current_index() + 1
+                    self._search_popup.update_match_count(current_idx, count)
+            else:
+                # No more matches
+                if self._search_popup:
+                    self._search_popup.update_match_count(0, 0)
+            
+            self._decoration_service.apply()
+    
+    def _on_replace_all(self, replacement: str) -> None:
+        """Handle replace all matches request."""
+        if self.isReadOnly():
+            return
+        
+        # Replace all matches
+        count = self._search_service.replace_all(replacement)
+        
+        # Clear all highlights
+        self._decoration_service.clear_layer(DecorationLayer.SEARCH_MATCHES)
+        self._decoration_service.clear_layer(DecorationLayer.CURRENT_MATCH)
+        self._decoration_service.apply()
+        
+        # Update popup to show no matches
+        if self._search_popup:
+            self._search_popup.update_match_count(0, 0)
+        
+        # Optionally show a status message (could be implemented later)
+        # For now, just focus back to editor
         self.setFocus()
     
     # ==================== Keyboard Shortcut Actions (Public API) ====================
