@@ -524,6 +524,14 @@ class CodeEditor(QPlainTextEdit):
                 self.paste_line()
                 return
         
+        elif event.key() == Qt.Key_Escape:
+            if self._search_popup and self._search_popup.isVisible():
+                self._search_popup.hide_popup()
+                return
+            if self._goto_line_overlay and self._goto_line_overlay.isVisible():
+                self._goto_line_overlay.hide_overlay()
+                return
+
         # Default behavior for all other keys
         super().keyPressEvent(event)
     
@@ -641,6 +649,9 @@ class CodeEditor(QPlainTextEdit):
     
     def show_search_popup(self) -> None:
         """Show the search popup widget (singleton - reuses existing instance)."""
+        # Hide goto line overlay if visible
+        if self._goto_line_overlay and self._goto_line_overlay.isVisible():
+            self._goto_line_overlay.hide_overlay()
         # Create once, reuse forever (singleton pattern)
         if not self._search_popup:
             self._search_popup = SearchPopup(self)
@@ -682,6 +693,11 @@ class CodeEditor(QPlainTextEdit):
         # Show existing instance (don't recreate)
         self._search_popup.show_popup()
     
+    def hide_search_popup(self) -> None:
+        """Hide the search popup if it exists."""
+        if self._search_popup:
+            self._search_popup.hide_popup()
+
     def _restore_search_highlights(self) -> None:
         """Restore search highlights from existing matches without re-searching."""
         # Clear previous highlights first
@@ -915,6 +931,9 @@ class CodeEditor(QPlainTextEdit):
     
     def go_to_line(self) -> None:
         """Show overlay and jump to a specific line."""
+        # If search popup is visible, hide it first
+        if self._search_popup and self._search_popup.isVisible():
+            self._search_popup.hide_popup()
         # Create overlay if it doesn't exist
         if self._goto_line_overlay is None:
             self._goto_line_overlay = GotoLineOverlay(self)

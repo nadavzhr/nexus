@@ -84,6 +84,10 @@ class GotoLineOverlay(QWidget):
         self.show()
         self.raise_()
         self.line_input.setFocus()
+
+    def hide_overlay(self) -> None:
+        """Hide the overlay."""
+        self.hide()
     
     def _position_overlay(self) -> None:
         """Position the overlay at the top-center of the parent."""
@@ -99,14 +103,6 @@ class GotoLineOverlay(QWidget):
         # Leave some margin from the top (20px)
         x = (parent.width() - size_hint.width()) // 2
         y = 20
-        
-        # Check if search popup is visible and adjust position if needed
-        if hasattr(parent, '_search_popup') and parent._search_popup and parent._search_popup.isVisible():
-            search_popup = parent._search_popup
-            search_bottom = search_popup.y() + search_popup.height()
-            # If our overlay would overlap, move it below the search popup
-            if y < search_bottom + 10:
-                y = search_bottom + 10
         
         self.move(x, y)
         self.setFixedSize(size_hint)

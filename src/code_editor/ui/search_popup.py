@@ -206,6 +206,10 @@ class SearchPopup(QWidget):
         self.activateWindow()  # Activate window
         self.search_input.setFocus(Qt.OtherFocusReason)
         self.search_input.selectAll()
+
+    def hide_popup(self) -> None:
+        """Hide the popup."""
+        self.hide()
     
     def eventFilter(self, obj, event) -> bool:
         """Filter events for child widgets to handle shortcuts.
