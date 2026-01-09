@@ -43,11 +43,9 @@ class SearchPopup(QWidget):
         self.setWindowFlags(Qt.Widget)
         self.setAutoFillBackground(True)
         
-        # Set focus policy - NoFocus for the container, let children handle it
-        self.setFocusPolicy(Qt.NoFocus)
-        
-        # Track all focusable widgets for manual tab navigation
-        self._focusable_widgets = []
+        # Set focus policy - container is focusable
+        # Use setFocusProxy to delegate to search_input (the entry point)
+        self.setFocusPolicy(Qt.StrongFocus)
     
     def _setup_ui(self) -> None:
         """Setup the UI components."""
@@ -167,25 +165,14 @@ class SearchPopup(QWidget):
         
         layout.addLayout(options_row)
         
-        # Build list of focusable widgets in tab order
-        # This list defines the keyboard navigation order
-        self._focusable_widgets = [
-            self.toggle_replace_btn,
-            self.search_input,
-            self.prev_btn,
-            self.next_btn,
-            close_btn,
-            self.replace_input,
-            self.replace_btn,
-            self.replace_all_btn,
-            self.case_checkbox,
-            self.regex_checkbox,
-            self.whole_word_checkbox,
-        ]
+        # Set focus proxy - when this widget receives focus, it goes to search_input
+        # This is the Qt-native way to handle composite widgets
+        self.setFocusProxy(self.search_input)
         
-        # Install event filter on all focusable widgets to intercept Tab
-        for widget in self._focusable_widgets:
-            widget.installEventFilter(self)
+        # Install event filter only on input widgets for shortcuts
+        # (Tab handling is now automatic via Qt's focus chain)
+        self.search_input.installEventFilter(self)
+        self.replace_input.installEventFilter(self)
         
         # Style
         self.setStyleSheet("""
@@ -341,25 +328,15 @@ class SearchPopup(QWidget):
         self.hide()
     
     def eventFilter(self, obj, event) -> bool:
-        """Filter events for child widgets to handle popup-specific shortcuts and Tab navigation.
+        """Filter events for input widgets to handle popup-specific shortcuts.
         
-        This handles:
-        1. Tab/Shift+Tab navigation within the popup (custom navigation chain)
-        2. Shortcuts that are specific to the search popup
+        This handles shortcuts that are specific to the search popup.
+        Tab navigation is now handled natively by Qt's focus system.
         Global shortcuts like Ctrl+H are handled by the parent editor widget's shortcut system.
         """
         # Don't process events if popup is hidden
         if not self.isVisible():
             return super().eventFilter(obj, event)
-        
-        if event.type() == QEvent.KeyPress:
-            # Handle Tab and Shift+Tab for custom navigation within popup
-            if event.key() == Qt.Key_Tab:
-                self._focus_next_widget(obj)
-                return True  # Event handled, don't propagate
-            elif event.key() == Qt.Key_Backtab:
-                self._focus_previous_widget(obj)
-                return True  # Event handled, don't propagate
         
         if obj in (self.search_input, self.replace_input) and event.type() == QEvent.KeyPress:
             # Handle Alt+C, Alt+R, Alt+W shortcuts (popup-specific)
@@ -399,36 +376,43 @@ class SearchPopup(QWidget):
         
         return super().eventFilter(obj, event)
     
-    def _focus_next_widget(self, current_widget) -> None:
-        """Move focus to the next widget in the focus chain."""
-        # Get list of currently visible focusable widgets
-        visible_widgets = [w for w in self._focusable_widgets if w.isVisible()]
+    def focusNextPrevChild(self, forward: bool) -> bool:
+        """
+        Override focus navigation to keep Tab/Shift+Tab within the popup.
         
-        if not visible_widgets:
-            return
+        This is the Qt-native way to constrain focus navigation to a widget subtree.
+        We let Qt handle the actual navigation logic - we just prevent it from
+        leaving the popup boundary.
         
-        try:
-            current_index = visible_widgets.index(current_widget)
-            # Move to next widget (wrap around to first if at end)
-            next_index = (current_index + 1) % len(visible_widgets)
-            visible_widgets[next_index].setFocus(Qt.TabFocusReason)
-        except ValueError:
-            # Current widget not in list, focus first visible widget
-            visible_widgets[0].setFocus(Qt.TabFocusReason)
-    
-    def _focus_previous_widget(self, current_widget) -> None:
-        """Move focus to the previous widget in the focus chain."""
-        # Get list of currently visible focusable widgets
-        visible_widgets = [w for w in self._focusable_widgets if w.isVisible()]
+        Args:
+            forward: True for Tab (next), False for Shift+Tab (previous)
+            
+        Returns:
+            True if focus was changed, False otherwise
+        """
+        # Let Qt handle navigation within our widget tree
+        # Qt automatically skips hidden/disabled widgets
+        result = super().focusNextPrevChild(forward)
         
-        if not visible_widgets:
-            return
+        # If Qt moved focus outside our widget (to parent's widgets),
+        # wrap it back to our first/last focusable child
+        focused = self.focusWidget()
+        if focused is None or not self.isAncestorOf(focused):
+            # Focus escaped our widget tree - wrap it back
+            if forward:
+                # Wrap to first focusable widget
+                self.search_input.setFocus(Qt.TabFocusReason)
+            else:
+                # Wrap to last focusable widget
+                # Try checkboxes in reverse order
+                if self.whole_word_checkbox.isVisible():
+                    self.whole_word_checkbox.setFocus(Qt.BacktabFocusReason)
+                elif self.regex_checkbox.isVisible():
+                    self.regex_checkbox.setFocus(Qt.BacktabFocusReason)
+                elif self.case_checkbox.isVisible():
+                    self.case_checkbox.setFocus(Qt.BacktabFocusReason)
+                else:
+                    self.search_input.setFocus(Qt.BacktabFocusReason)
+            return True
         
-        try:
-            current_index = visible_widgets.index(current_widget)
-            # Move to previous widget (wrap around to last if at first)
-            prev_index = (current_index - 1) % len(visible_widgets)
-            visible_widgets[prev_index].setFocus(Qt.BacktabFocusReason)
-        except ValueError:
-            # Current widget not in list, focus last visible widget
-            visible_widgets[-1].setFocus(Qt.BacktabFocusReason)
+        return result
